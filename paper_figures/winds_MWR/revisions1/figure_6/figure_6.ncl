@@ -1,0 +1,1127 @@
+;***************************************
+; PROGRAM DESCRIPTION: This script plots single panel plots of 
+;                      diagnostic variables
+; INPUT DATA: WRF output or RACM-WRF output post processed with wrfout-to-cf.ncl
+;             and then made into yearly seasonal mean files
+; OUTPUT DATA: One Panel plot of specified variable
+; Note: This can be looped with 01_wrfsinglepanel_akd_seasonal.csh 
+;       to evaluate at multiple hours or variables
+; CREATOR: Modified by Alice DuVivier - August 2013
+;***************************************
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/shea_util.ncl"
+;***************************************
+begin
+; MANUAL INPUTS - for testing purposes
+; ******************************************************
+  nx_input = "7"
+  ny_input = "5"
+  master_vals = "winds0.01_rlen1000000_r4"
+  datatitle1  = "wrf50_200511_200703_6h"
+  datatitle1b = "era_i_200511_200703_6h"
+  varcode = "U10"
+  ;; options: "era_i_200511_200703_6h"
+  ;; "wrf10_200511_200703_6h" "wrf50_200511_200703_6h"
+; ******************************************************
+; NOTE: plots of wind do not have vector overlay. NCL memory has problems with the high
+; resolution data in this volume and plotting vectors. For vector plots please use script
+; that is less complex (node_avgs or winter_avg_diffs)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;  
+; Set which plots to print out
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; BEGIN SCRIPT
+print("Calculating group percent contributions to terms")
+
+; get tag to let us know if it needs interpolation
+title1_ch  = stringtocharacter(datatitle1)
+title1_sub = title1_ch(0:4)
+tag_1 = chartostring(title1_sub)
+title1b_ch  = stringtocharacter(datatitle1b)
+title1b_sub = title1b_ch(0:4)
+tag_1b = chartostring(title1b_sub)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;  
+; Calculate frequencies and change in frequencies
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;
+; Load input files
+;;;;;;;;;;
+; Dates from data array index and visual file that places each date at a given node
+print("Loading dates and SOM visual data")
+
+if (tag_1 .eq. "wrf10")then
+  datatitle_1 = "wrf10_200511_200703"
+  plot_title1 = "WRF 10km"
+  datefile_1 = "/data3/duvivier/SOM/training/dates/"+datatitle_1+"_dates.txt"
+  visfile_1  = "/data3/duvivier/SOM/training/som_"+nx_input+ny_input+"/master/"+datatitle_1+"_"+master_vals+".vis"
+end if
+if (tag_1 .eq. "wrf50")then
+  datatitle_1 = "wrf50_199701_200712"
+  plot_title1 = "WRF 50km"
+  datefile_1 = "/data3/duvivier/SOM/training/dates/"+datatitle_1+"_dates.txt"
+  visfile_1  = "/data3/duvivier/SOM/training/som_"+nx_input+ny_input+"/master/"+datatitle_1+"_"+master_vals+".vis"
+end if
+if (tag_1b .eq. "era_i")then
+  datatitle_1b = "era_i_199701_200712"
+  plot_title1b = "ERA Interim"
+  datefile_1b = "/data3/duvivier/SOM/training/dates/"+datatitle_1b+"_dates.txt"
+  visfile_1b  = "/data3/duvivier/SOM/training/som_"+nx_input+ny_input+"/master/"+datatitle_1b+"_"+master_vals+".vis"
+end if
+if (tag_1b .eq. "wrf50")then
+  datatitle_1b = "wrf50_199701_200712"
+  plot_title1b = "WRF 50km"
+  datefile_1b = "/data3/duvivier/SOM/training/dates/"+datatitle_1b+"_dates.txt"
+  visfile_1b  = "/data3/duvivier/SOM/training/som_"+nx_input+ny_input+"/master/"+datatitle_1b+"_"+master_vals+".vis"
+end if
+
+;;;;;;;;;;
+; Load information for two files
+;;;;;;;;;;
+; file1 - either wrf10 or wrf50
+  dates_1 = ndtooned(readAsciiTable(datefile_1,1,"string",0)) ; ignores no rows
+  ndates_1 = dimsizes(dates_1)
+  dateschar_1 = stringtochar(dates_1)
+  sdateym_1 = chartostring(dateschar_1(:,0:5))
+  sdatehrs_1 = chartostring(dateschar_1(:,8:9))
+  vis_1 = new((/ndates_1,3/),integer)
+  vis_1 = readAsciiTable(visfile_1,3,"integer",1) ; ignores first row
+; file1b - either wrf50 or era_i
+  dates_1b = ndtooned(readAsciiTable(datefile_1b,1,"string",0)) ; ignores no rows
+  ndates_1b = dimsizes(dates_1b)
+  dateschar_1b = stringtochar(dates_1b)
+  sdateym_1b = chartostring(dateschar_1b(:,0:5))
+  sdatehrs_1b = chartostring(dateschar_1b(:,8:9))
+  vis_1b = new((/ndates_1b,3/),integer)
+  vis_1b = readAsciiTable(visfile_1b,3,"integer",1) ; ignores first row
+
+;;;;;;;;;;
+; Get just dates we want
+;;;;;;;;;;
+  hrs_6 = (/"00","06","12","18"/)
+  ym_sub = (/"200511","200512","200601","200602","200603","200611","200612","200701","200702","200703"/)
+
+;;;;;;;;;;
+; Loop through plotting options
+;;;;;;;;;;
+if (tag_1 .eq. "wrf10")then     ; wrf 10km - just narrow down hours
+  dateind_1 = ind(sdatehrs_1.eq.hrs_6(0).or.sdatehrs_1.eq.hrs_6(1).or.sdatehrs_1.eq.hrs_6(2).or.sdatehrs_1.eq.hrs_6(3))
+  visall_1 = vis_1(dateind_1,:) ; get only every 6 hours
+  ndates_1 = dimsizes(visall_1(:,0))
+end if
+if (tag_1 .eq. "wrf50")then     ; wrf 50km - narrow down years/months/hours
+  dateind_1 = ind(sdateym_1.eq.ym_sub(0).or.sdateym_1.eq.ym_sub(1).or.sdateym_1.eq.ym_sub(2).or.sdateym_1.eq.ym_sub(3).or.sdateym_1.eq.ym_sub(4).or.sdateym_1.eq.ym_sub(5).or.sdateym_1.eq.ym_sub(6).or.sdateym_1.eq.ym_sub(7).or.sdateym_1.eq.ym_sub(8).or.sdateym_1.eq.ym_sub(9))
+  visall_1_tmp = vis_1(dateind_1,:)
+  sdatehrs_tmp = sdatehrs_1(dateind_1)
+  delete(dateind_1)
+  dateind_1 = ind(sdatehrs_tmp.eq.hrs_6(0).or.sdatehrs_tmp.eq.hrs_6(1).or.sdatehrs_tmp.eq.hrs_6(2).or.sdatehrs_tmp.eq.hrs_6(3))
+  visall_1 = visall_1_tmp(dateind_1,:)
+  ndates_1 = dimsizes(visall_1(:,0))
+  delete(sdatehrs_tmp)
+  delete(visall_1_tmp)
+end if
+if (tag_1b .eq. "era_i")then    ; era interim - just need to narrow down years/months
+  dateind_1b = ind(sdateym_1b.eq.ym_sub(0).or.sdateym_1b.eq.ym_sub(1).or.sdateym_1b.eq.ym_sub(2).or.sdateym_1b.eq.ym_sub(3).or.sdateym_1b.eq.ym_sub(4).or.sdateym_1b.eq.ym_sub(5).or.sdateym_1b.eq.ym_sub(6).or.sdateym_1b.eq.ym_sub(7).or.sdateym_1b.eq.ym_sub(8).or.sdateym_1b.eq.ym_sub(9))
+  visall_1b = vis_1b(dateind_1b,:)
+  ndates_1b = dimsizes(visall_1b(:,0))
+end if
+if (tag_1b .eq. "wrf50")then     ; wrf 50km - narrow down years/months/hours
+  dateind_1b = ind(sdateym_1b.eq.ym_sub(0).or.sdateym_1b.eq.ym_sub(1).or.sdateym_1b.eq.ym_sub(2).or.sdateym_1b.eq.ym_sub(3).or.sdateym_1b.eq.ym_sub(4).or.sdateym_1b.eq.ym_sub(5).or.sdateym_1b.eq.ym_sub(6).or.sdateym_1b.eq.ym_sub(7).or.sdateym_1b.eq.ym_sub(8).or.sdateym_1b.eq.ym_sub(9))
+  visall_1b_tmp = vis_1b(dateind_1b,:)
+  sdatehrs_tmp = sdatehrs_1b(dateind_1b)
+  delete(dateind_1b)
+  dateind_1b = ind(sdatehrs_tmp.eq.hrs_6(0).or.sdatehrs_tmp.eq.hrs_6(1).or.sdatehrs_tmp.eq.hrs_6(2).or.sdatehrs_tmp.eq.hrs_6(3))
+  visall_1b = visall_1b_tmp(dateind_1b,:)
+  ndates_1b = dimsizes(visall_1b(:,0))
+  delete(sdatehrs_tmp)
+  delete(visall_1b_tmp)
+end if
+
+;;;;;;;;;;
+; Calculate frequencies for each data type
+;;;;;;;;;;
+; Calculate node counts and frequencies for comparison of interest
+  nx_node = stringtoint(nx_input)
+  ny_node = stringtoint(ny_input)
+  nnode = nx_node*ny_node
+; Calculate group counts and frequencies
+  nx_group = 4
+  ny_group = 2
+  ngroup = nx_group*ny_group  ; 8 groups total
+
+; variable 1
+  nodefreq_1   = new((/nx_node,ny_node/),"float") 
+  freq_nodes_1     = new((/nnode/),"float") 
+  nodecount_1    = new((/nnode/),"integer") 
+; variable_1b
+  nodefreq_1b   = new((/nx_node,ny_node/),"float") 
+  freq_nodes_1b     = new((/nnode/),"float") 
+  nodecount_1b    = new((/nnode/),"integer") 
+
+; set default check values
+  check1 = 0
+  check1b = 0
+  n = 0
+; loop through each node
+do y = 0, ny_node - 1
+ do x = 0, nx_node - 1
+
+  print("node: "+x+","+y)
+  ; These are the dates for this particular node:
+  dateindices_1 = ind(visall_1(:,0).eq.x.and.(visall_1(:,1).eq.y))
+  dateindices_1b = ind(visall_1b(:,0).eq.x.and.(visall_1b(:,1).eq.y))
+        
+  ; Calculate frequencies
+  ; variable 1
+  if (all(ismissing(dateindices_1))) then
+    node_ndates_1 = 0
+    nodefreq_1(n) = 0
+    nodecount_1(n) = 0
+  end if
+  if (.not.all(ismissing(dateindices_1))) then
+    node_ndates_1 = dimsizes(dateindices_1)
+    nodefreq_1(x,y) = (int2flt(node_ndates_1)/int2flt(ndates_1))*100.
+    freq_nodes_1(n) = (int2flt(node_ndates_1)/int2flt(ndates_1))*100.
+    nodecount_1(n) = node_ndates_1
+  end if
+  check1 = check1 + node_ndates_1  ; make sure all dates are counted
+  ; variable 1b
+  if (all(ismissing(dateindices_1b))) then
+    node_ndates_1b = 0
+    nodefreq_1b(n) = 0
+    nodecount_1b(n) = 0
+  end if
+  if (.not.all(ismissing(dateindices_1b))) then
+    node_ndates_1b = dimsizes(dateindices_1b)
+    nodefreq_1b(x,y) = (int2flt(node_ndates_1b)/int2flt(ndates_1b))*100.
+    freq_nodes_1b(n) = (int2flt(node_ndates_1b)/int2flt(ndates_1b))*100.
+    nodecount_1b(n) = node_ndates_1b
+  end if
+  check1b = check1b + node_ndates_1b  ; make sure all dates are counted
+
+   n = n + 1
+   delete(dateindices_1)
+   delete(dateindices_1b)
+ end do
+end do
+
+; Check the dates and print error messages if calculation fails
+if (check1.ne.ndates_1) then
+ print("Error.  Number of dates is not equal to total number of indices.")
+ print("Num. dates: "+ndates_1+"   Tot indices: "+check1)
+end if
+if (check1b.ne.ndates_1b) then
+ print("Error.  Number of dates is not equal to total number of indices.")
+ print("Num. dates: "+ndates_1b+"   Tot indices: "+check1b)
+end if
+
+;;;;;;;;;;
+; Calculate if frequencies are statistically different
+;;;;;;;;;;
+; make new array to plot
+test_stat = new((/nx_node,ny_node/),double)
+test_stat = 0.
+freq_diff = nodefreq_1 - nodefreq_1b ; get difference in frequencies
+test_stat_num = freq_diff/100.
+nf1 = nodefreq_1/100.  ; convert from % to just ratio
+nf1b = nodefreq_1b/100.
+test_stat_den = sqrt((nf1b*(1-nf1b)/ndates_1b) + (nf1*(1-nf1)/ndates_1))
+test_stat_den = where(test_stat_den.eq.0,test_stat_den@_FillValue,test_stat_den) ; set 0 to missing to avoid divide by zero error
+test_stat = test_stat_num/test_stat_den
+test_stat = where(ismissing(test_stat),0,test_stat)
+
+; statistical significance meanings:
+; if test_stat .gt. 2.58 then it's 95% statistically significant
+; if test_stat .ge. 1.96 and .lt. 2.58 then it's 95% statistically significant
+; if test_stat .ge. 1.645 and .lt. 1.96 then it's 95% statistically significant
+; NOTE: the same is true in reverse for negative values of these numbers
+
+print("completed frequency calculations")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;  
+; Calculate node differences
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;
+; Set information for variable
+;;;;;;;;;;
+; add each variable set in the c-shell 'varcode' and assign it a title and other necessary information
+if (varcode.eq."U10")then
+  vartitle1 = "Avg 10m Wind speed"
+  invar1 = "wspd_10m_avg"
+  invar_v = "wspd_10m_var"
+  vartype = "2d"
+  cmaptype = "wind"
+  zoom2 = True
+end if
+
+; Set the contour interval for each input variable   
+; set contour limits manually:
+  if (cmaptype.eq."wind") then
+    cmin1               = 0.
+    cmax1               = 15.
+    clev1               = 1.
+    stride1             = 1                 ; label stride
+    cmin2               = -10.
+    cmax2               = 10.
+    clev2               = 1.
+    stride2             = 2                 ; label stride for diff plot
+    cmin3               = -3.0
+    cmax3               = 3.0
+    clev3               = 0.25
+    stride3             = 2                 ; label stride
+    cmin4               = -2.0
+    cmax4               = 2.0
+    clev4               = 0.2
+    stride4             = 2                 ; label stride for diff plot
+    plotlines           = False              ; lines for reg plot
+    difflines           = False              ; lines for diff plot
+    cntype              = "AreaFill"
+    spreadstart1        = 2 ;2                 ; start at color
+    spreadend1          = 18 ;35                ; end at color
+    spreadstart2        = 20 ;37                ; start at color
+    spreadend2          = 115 ;132               ; end at color
+    spreadstart3        = 20 ;37                ; start at color
+    spreadend3          = 115 ;132               ; end at color
+    colormap            = "SOM_wind_table_mod" ;"SOM_wind_table"
+  end if
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;  
+; Data Processing
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+dir1 = "/data3/duvivier/SOM/analysis/flux_compare/node_avgs/"
+
+;;;;;;;;;;
+; load in node averages
+;;;;;;;;;;
+; Load in lat/lon to get information for WRF10 domain
+  fname0 = "node_0x_0y_"+datatitle1
+  f0 = addfile(dir1 + "fluxes-sst/"+ fname0 + "-fluxes-sst.nc","r")
+  lat2d_1 = f0->lat
+  lon2d_1 = f0->lon
+  z_sfc_1 = f0->Z_sfc
+  if(tag_1 .eq. "wrf10")then
+    mask_50km = f0->mask_50km_terrain
+  end if
+  delete(fname0)
+  delete(f0)
+
+  dims = dimsizes(lat2d_1)     ; get lat/lon dimensions
+  n_sn_1 = dims(0)              ; get south/north points
+  n_we_1 = dims(1)              ; get west/east points
+  n_tot_1 = n_sn_1*n_we_1              ; get total number of points in high res domain
+  delete(dims)
+
+; Load in lat/lon to get information for WRF10 domain
+  fname0b = "node_0x_0y_"+datatitle1b
+  f0b = addfile(dir1 + "fluxes-sst/"+ fname0b + "-fluxes-sst.nc","r")
+  lat2d_1b = f0b->lat
+  lon2d_1b = f0b->lon
+  z_sfc_1b = f0b->Z_sfc
+  delete(fname0b)
+  delete(f0b)
+
+  dims = dimsizes(lat2d_1b)     ; get lat/lon dimensions
+  n_sn_1b = dims(0)              ; get south/north points
+  n_we_1b = dims(1)              ; get west/east points
+  n_tot_1b = n_sn_1b*n_we_1b              ; get total number of points in high res domain
+  delete(dims)
+
+  ; get weights and indicies for regridding (WRF50 and era weightings are identical)
+  weightin = addfile("/data3/duvivier/SOM/DATA/weightings_WRF50_to_WRF10.nc","r")
+  interp_ind = weightin->interp_ind
+  interp_wgt = weightin->interp_wgt
+
+  ; create all-node array for node average variable
+  var1 = new((/nnode,n_sn_1,n_we_1/),"float")
+  var1b = new((/nnode,n_sn_1b,n_we_1b/),"float")
+  fill = var1@_FillValue
+  variance1 = new((/nnode,n_sn_1,n_we_1/),"float")
+  variance1b = new((/nnode,n_sn_1b,n_we_1b/),"float")
+
+;;;;;;;;;;
+; Load in actual data for analysis
+;;;;;;;;;;
+n = 0
+; loop through each node
+do y = 0, ny_node - 1
+ do x = 0, nx_node - 1
+  print("node: "+x+","+y)
+
+  fname1 = "node_"+x+"x_"+y+"y_"+datatitle1
+  f1 = addfile(dir1 + "fluxes-sst/"+ fname1 + "-fluxes-sst.nc","r")
+  var1(n,:,:) = f1->$invar1$(south_north|:,west_east|:)
+  variance1(n,:,:) = f1->$invar_v$(south_north|:,west_east|:)
+ 
+  fname1b = "node_"+x+"x_"+y+"y_"+datatitle1b
+  f1b = addfile(dir1 + "fluxes-sst/"+ fname1b + "-fluxes-sst.nc","r")
+ 
+  var1b(n,:,:) = f1b->$invar1$(south_north|:,west_east|:)
+  variance1b(n,:,:) = f1b->$invar_v$(south_north|:,west_east|:)
+ 
+  ; delete vars to use in next loop
+  delete(fname1)
+  delete(f1)
+  delete(fname1b)
+  delete(f1b)
+  n = n+1
+ end do
+end do
+delete(n)
+
+print("Loaded "+varcode+" from both files")
+
+; change units for curltau variable and get rid of nans, etc.
+if (varcode .eq. "curltau")then
+  var1 = where(var1 .eq. "nan" .or. var1 .eq. "-nan" .or. var1 .eq. "inf" .or. var1 .eq. "-inf", fill, var1)
+  var1b = where(var1b .eq. "nan" .or. var1b .eq. "-nan" .or. var1b .eq. "inf" .or. var1b .eq. "-inf", fill, var1b)
+  var1 = var1*10.0E5
+  var1b = var1b*10.0E5
+  var1@units = "10E-5 N m-3"
+  var1b@units = "10E-5 N m-3"
+end if
+
+print("Masking terrain - nodes")
+n = 0
+; loop through each node
+do n = 0, nnode - 1
+  ; mask terrain - focus on ocean
+  var1(n,:,:) = where(z_sfc_1 .lt. 10., var1(n,:,:), var1@_FillValue)
+  var1b(n,:,:) = where(z_sfc_1 .lt. 10., var1b(n,:,:), var1b@_FillValue)
+
+  ; mask lat/lons - focus on S. Greenland region
+  var1(n,:,:) = where(lat2d_1 .gt. 55. .and. lat2d_1 .lt. 71. .and. lon2d_1 .lt. -19. .and. lon2d_1 .gt. -55., var1(n,:,:), var1@_FillValue)
+  var1b(n,:,:) = where(lat2d_1 .gt. 55. .and. lat2d_1 .lt. 71. .and. lon2d_1 .lt. -19. .and. lon2d_1 .gt. -55., var1b(n,:,:), var1b@_FillValue)
+end do
+
+;;;;;;;;;;
+; Find difference and probability
+;;;;;;;;;;
+; find difference
+diff = var1 - var1b
+title_diff = "Diff: ("+datatitle1+" - "+datatitle1b+")"
+
+; Calculate statistical significance
+; Uses student's t-test. If the probability is less than 0.1 then we know at a 90% confidence level
+; that the two means are statistically significant.
+prob = new((/nnode,n_sn_1,n_we_1/),"float")
+n = 0
+do n = 0, nnode - 1
+  prob(n,:,:) = 100.*(1. - ttest(var1(n,:,:),variance1(n,:,:),nodecount_1(n), var1b(n,:,:),variance1b(n,:,:),nodecount_1b(n), False, False))    
+end do
+
+; prints together the variable title (set above for each type of data) with title1 (defined in cshell as the wrf or met info) and the max and min values
+print(vartitle1+" min: "+min(diff)+"  max: "+max(diff)) 
+
+print("completed node calculations")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;  
+; Calculate difference terms for analysis
+; delta U = sigma (delta_freq*U + freq*delta_U + delta_freq*delta_U)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+var = var1b             ; era or wrf50 as control
+freq = freq_nodes_1b/100.      ; era or wrf50 as control
+delta_var = diff        ; var_1 - var_1b
+delta_freq = (freq_nodes_1 - freq_nodes_1b)/100.     ; freq_1 - freq_1b
+
+  ; Make arrays for each term for each node
+  term1 = new((/nnode,n_sn_1,n_we_1/),"float")
+  term1@_FillValue = fill
+  term1_sum = new((/n_sn_1,n_we_1/),"float")
+  term1_sum = 0.0
+  term2 = new((/nnode,n_sn_1,n_we_1/),"float")
+  term2@_FillValue = fill
+  term2_sum = new((/n_sn_1,n_we_1/),"float")
+  term2_sum = 0.0
+  term3 = new((/nnode,n_sn_1,n_we_1/),"float")
+  term3@_FillValue = fill
+  term3_sum = new((/n_sn_1,n_we_1/),"float")
+  term3_sum = 0.0
+  winter_nodes_1 = new((/nnode,n_sn_1,n_we_1/),"float")
+  winter_nodes_1b = new((/nnode,n_sn_1,n_we_1/),"float")
+  winter_avg_1 = new((/n_sn_1,n_we_1/),"float")
+  winter_avg_1 = 0.0
+  winter_avg_1b = new((/n_sn_1,n_we_1/),"float")
+  winter_avg_1b = 0.0
+
+  do n = 0, nnode - 1
+    ;Calculate each term for all nodes
+    term1(n,:,:) = delta_freq(n)*var(n,:,:)
+    term2(n,:,:) = freq(n)*delta_var(n,:,:)
+    term3(n,:,:) = delta_freq(n)*delta_var(n,:,:)
+
+    ; Do sums over various terms
+    term1_sum(:,:) = term1_sum(:,:) + term1(n,:,:)
+    term2_sum(:,:) = term2_sum(:,:) + term2(n,:,:)
+    term3_sum(:,:) = term3_sum(:,:) + term3(n,:,:)
+
+    ; Find winter net average
+    winter_nodes_1(n,:,:)  = (freq_nodes_1(n)/100.) * var1(n,:,:)
+    winter_nodes_1b(n,:,:) = (freq_nodes_1b(n)/100.) * var1b(n,:,:)    
+    winter_avg_1 = winter_avg_1(:,:) + winter_nodes_1(n,:,:)
+    winter_avg_1b = winter_avg_1b(:,:) + winter_nodes_1b(n,:,:)
+  end do
+
+  ; Find winter differences
+  winter_diff = winter_avg_1 - winter_avg_1b
+  ; Do sums over various terms for why the difference exists
+  nodes_sum_all = term1 + term2 + term3
+  net_diff = term1_sum + term2_sum + term3_sum
+
+  print("Completed calculations for assessing why differences exist")
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;  
+; Use net average files to calculate difference
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  fname1 = "net_avg_"+datatitle1
+  fname1b = "net_avg_"+datatitle1b
+  f1 = addfile(dir1+"fluxes-sst/"+fname1+"-fluxes-sst.nc","r")
+  f1b = addfile(dir1+"fluxes-sst/"+fname1b+"-fluxes-sst.nc","r")
+  obs_1 = f1->number_dates
+
+  ; create all-node array for node average variable
+  avg1 = new((/n_sn_1,n_we_1/),"float")
+  avg1b = new((/n_sn_1b,n_we_1b/),"float")
+  avg_variance1 = new((/n_sn_1,n_we_1/),"float")
+  avg_variance1b = new((/n_sn_1b,n_we_1b/),"float")
+  fill = var1@_FillValue
+
+;;;;;;;;;;
+; Load in actual data for analysis
+;;;;;;;;;;
+  avg1(:,:) = f1->$invar1$(:,:) ;(south_north|:,west_east|:)
+  avg_variance1(:,:) = f1->$invar_v$(:,:) ;(south_north|:,west_east|:)
+
+  avg1b(:,:) = f1b->$invar1$(:,:) ;(south_north|:,west_east|:)
+  avg_variance1b(:,:) = f1b->$invar_v$(:,:) ;(south_north|:,west_east|:)
+
+  ; delete vars to use in next loop
+  delete(f1)
+  delete(f1b)
+
+print("Loaded variables from both files")
+print("Masking terrain - net")
+  ; mask terrain - focus on ocean
+avg1(:,:) = where(z_sfc_1 .lt. 10., avg1(:,:), avg1@_FillValue)
+avg1b(:,:) = where(z_sfc_1 .lt. 10., avg1b(:,:), avg1b@_FillValue)
+
+  ; mask lat/lons - focus on S. Greenland region
+avg1(:,:) = where(lat2d_1 .gt. 55. .and. lat2d_1 .lt. 71. .and. lon2d_1 .lt. -19. .and. lon2d_1 .gt. -55., avg1(:,:), avg1@_FillValue)
+avg1b(:,:) = where(lat2d_1 .gt. 55. .and. lat2d_1 .lt. 71. .and. lon2d_1 .lt. -19. .and. lon2d_1 .gt. -55., avg1b(:,:), avg1b@_FillValue)
+
+;;;;;;;;;;
+; Find difference
+;;;;;;;;;;
+avg_diff = avg1 - avg1b
+
+;;;;;;;;;;
+; Calculate statistical significance
+;;;;;;;;;;
+; Uses student's t-test. If the probability is less than 0.1 then we know at a 90% confidence level
+; that the two means are statistically significant.
+avg_prob = 100.*(1. - ttest(avg1,avg_variance1,obs_1(0), avg1b,avg_variance1b,obs_1(0), False, False))
+
+; make mask of points that are statistically significant at 95% level
+; and fulfill cutoff of minimum differences
+  ; 1 m/s difference cutoff (~10% max diff)
+  mask_95_prob = where(avg_prob .gt. 95., 1, fill)
+  mask_min_diff = where(abs(winter_diff) .gt. 0.95, 1, fill)
+  mask_all = where(mask_95_prob .eq. 1 .and. mask_min_diff .eq. 1, 1, fill)
+
+print("completed calculations with net avg files")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;  
+; Calculate percent contributions to net avg
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+avg_diff = where(avg_diff .eq. 0.0, avg_diff@_FillValue, avg_diff)
+
+; get total points going into the averages
+dum = ind(.not.ismissing(ndtooned(mask_all)))
+pts_tot = dimsizes(dum)
+delete(dum)
+
+;;;;;;;;;;;;;;
+; get percents for net terms
+;;;;;;;;;;;;;;
+; get % contribution for each point that is both within the 95% 
+; confidence level *and* above the threshold of differences set earlier.
+;;; term1 - net ;;;
+term1_all = ((term1_sum*mask_all)/avg_diff)*100.
+term1_pcnt = avg(term1_all)
+;;; term2 - net ;;;
+term2_all = ((term2_sum*mask_all)/avg_diff)*100.
+term2_pcnt = avg(term2_all)
+;;; term3 - net ;;;
+term3_all = ((term3_sum*mask_all)/avg_diff)*100.
+term3_pcnt = avg(term3_all)
+;;; total pcnt ;;;
+term_total_pcnt = term1_pcnt + term2_pcnt + term3_pcnt
+
+;;;;;;;;;;;;;;
+; get percents for nodes
+;;;;;;;;;;;;;;
+; Calculate percent contribution for each node (sum of all terms and terms individually)
+nodes_all_pcnt = new((/nnode/),"float")
+nodes_term1_pcnt = new((/nnode/),"float")
+nodes_term2_pcnt = new((/nnode/),"float")
+nodes_term3_pcnt = new((/nnode/),"float")
+
+total_pcnt = 0.0
+do n = 0, nnode - 1
+  ; Get node contributions to net difference
+   dum = ((nodes_sum_all(n,:,:)*mask_all)/avg_diff)*100.
+   nodes_all_pcnt(n) = avg(dum)
+   total_pcnt = total_pcnt + nodes_all_pcnt(n)
+     
+  ; each term individually
+   ; term1 ;
+   dum = ((term1(n,:,:)*mask_all)/term1_sum)*100.
+   nodes_term1_pcnt(n) = avg(dum)
+   ; term2 ;
+   dum = ((term2(n,:,:)*mask_all)/term2_sum)*100.
+   nodes_term2_pcnt(n) = avg(dum)
+   ; term3 ;
+   dum = ((term3(n,:,:)*mask_all)/term3_sum)*100.
+   nodes_term3_pcnt(n) = avg(dum)
+end do
+
+; Calculate percent contribution for each group (sum of nodes that are in group)
+groups_all_pcnt = new((/ngroup/),"float")
+groups_all_pcnt = 0.0
+groups_term1_pcnt = new((/ngroup/),"float")
+groups_term1_pcnt = 0.0
+groups_term2_pcnt = new((/ngroup/),"float")
+groups_term2_pcnt = 0.0
+groups_term3_pcnt = new((/ngroup/),"float")
+groups_term3_pcnt = 0.0
+
+do n= 0, nnode-1
+  ;; group1 - northeastery flow
+  if(n .eq. 0 .or. n .eq. 1 .or. n .eq. 7)then
+    groups_all_pcnt(0) = groups_all_pcnt(0) + nodes_all_pcnt(n)
+    groups_term1_pcnt(0) = groups_term1_pcnt(0) + nodes_term1_pcnt(n)
+    groups_term2_pcnt(0) = groups_term2_pcnt(0) + nodes_term2_pcnt(n)
+    groups_term3_pcnt(0) = groups_term3_pcnt(0) + nodes_term3_pcnt(n)
+  end if
+ ;; group2 - northeasterly flow in DSN
+  if(n .eq. 2 .or. n .eq. 8 .or. n .eq. 9 .or. n .eq. 16 .or. n .eq. 17)then
+    groups_all_pcnt(1) = groups_all_pcnt(1) + nodes_all_pcnt(n)
+    groups_term1_pcnt(1) = groups_term1_pcnt(1) + nodes_term1_pcnt(n)
+    groups_term2_pcnt(1) = groups_term2_pcnt(1) + nodes_term2_pcnt(n)
+    groups_term3_pcnt(1) = groups_term3_pcnt(1) + nodes_term3_pcnt(n)
+  end if
+  ;; group3 - WTJ with barrier flow
+  if(n .eq. 3 .or. n .eq. 4 .or. n .eq. 10 .or. n .eq. 11 .or. n .eq. 18 .or. n .eq. 19)then
+    groups_all_pcnt(2) = groups_all_pcnt(2) + nodes_all_pcnt(n)
+    groups_term1_pcnt(2) = groups_term1_pcnt(2) + nodes_term1_pcnt(n)
+    groups_term2_pcnt(2) = groups_term2_pcnt(2) + nodes_term2_pcnt(n)
+    groups_term3_pcnt(2) = groups_term3_pcnt(2) + nodes_term3_pcnt(n)
+  end if
+  ;; group4 - Strong WTJ with barrier flow
+  if(n .eq. 5 .or. n .eq. 6 .or. n .eq. 12 .or. n .eq. 13 .or. n .eq. 20)then
+    groups_all_pcnt(3) = groups_all_pcnt(3) + nodes_all_pcnt(n)
+    groups_term1_pcnt(3) = groups_term1_pcnt(3) + nodes_term1_pcnt(n)
+    groups_term2_pcnt(3) = groups_term2_pcnt(3) + nodes_term2_pcnt(n)
+    groups_term3_pcnt(3) = groups_term3_pcnt(3) + nodes_term3_pcnt(n) 
+  end if
+  ;; group5 - Strong ETJ
+  if(n .eq. 14 .or. n .eq. 21 .or. n .eq. 28 .or. n .eq. 29)then
+    groups_all_pcnt(4) = groups_all_pcnt(4) + nodes_all_pcnt(n)
+    groups_term1_pcnt(4) = groups_term1_pcnt(4) + nodes_term1_pcnt(n)
+    groups_term2_pcnt(4) = groups_term2_pcnt(4) + nodes_term2_pcnt(n)
+    groups_term3_pcnt(4) = groups_term3_pcnt(4) + nodes_term3_pcnt(n) 
+  end if
+  ;; group6 - ETJ
+  if(n .eq. 15 .or. n .eq. 22 .or. n .eq. 23 .or. n .eq. 30)then
+    groups_all_pcnt(5) = groups_all_pcnt(5) + nodes_all_pcnt(n)
+    groups_term1_pcnt(5) = groups_term1_pcnt(5) + nodes_term1_pcnt(n)
+    groups_term2_pcnt(5) = groups_term2_pcnt(5) + nodes_term2_pcnt(n)
+    groups_term3_pcnt(5) = groups_term3_pcnt(5) + nodes_term3_pcnt(n) 
+  end if
+  ;; group7 - southerly flow
+  if(n .eq. 24 .or. n .eq. 25 .or. n .eq. 31 .or. n .eq. 32)then
+    groups_all_pcnt(6) = groups_all_pcnt(6) + nodes_all_pcnt(n)
+    groups_term1_pcnt(6) = groups_term1_pcnt(6) + nodes_term1_pcnt(n)
+    groups_term2_pcnt(6) = groups_term2_pcnt(6) + nodes_term2_pcnt(n)
+    groups_term3_pcnt(6) = groups_term3_pcnt(6) + nodes_term3_pcnt(n)
+  end if
+  ;; group8 - WTJ without barrier flow
+  if(n .eq. 26 .or. n .eq. 27 .or. n .eq. 33 .or. n .eq. 34)then
+    groups_all_pcnt(7) = groups_all_pcnt(7) + nodes_all_pcnt(n)
+    groups_term1_pcnt(7) = groups_term1_pcnt(7) + nodes_term1_pcnt(n)
+    groups_term2_pcnt(7) = groups_term2_pcnt(7) + nodes_term2_pcnt(n)
+    groups_term3_pcnt(7) = groups_term3_pcnt(7) + nodes_term3_pcnt(n)
+  end if
+end do
+
+;;;;;;;;;;
+; Set array size for group plot
+;;;;;;;;;;
+; make new arrays
+groups_all    = new((/nx_group, ny_group/),"float")
+groups_term1  = new((/nx_group, ny_group/),"float")
+groups_term2  = new((/nx_group, ny_group/),"float")
+groups_term3  = new((/nx_group, ny_group/),"float")
+
+; assign data to new arrays
+groups_all(:,0)   = groups_all_pcnt(0:nx_group-1)
+groups_all(:,1)   = groups_all_pcnt(nx_group:ngroup-1)
+groups_term1(:,0) = groups_term1_pcnt(0:nx_group-1)
+groups_term1(:,1) = groups_term1_pcnt(nx_group:ngroup-1)
+groups_term2(:,0) = groups_term2_pcnt(0:nx_group-1)
+groups_term2(:,1) = groups_term2_pcnt(nx_group:ngroup-1)
+groups_term3(:,0) = groups_term3_pcnt(0:nx_group-1)
+groups_term3(:,1) = groups_term3_pcnt(nx_group:ngroup-1)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;  
+; Plotting
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+print("Processing all graphs for "+varcode)
+outdir = "./"
+
+; Resources for blank plot:
+  res_blank                                = True
+  res_blank@gsnFrame                       = False  ; do not frame yet (so we can panel)
+  res_blank@gsnDraw                        = False   ; do not draw yet (so we can panel)
+  res_blank@gsnMaximize                    = True
+  res_blank@trXMinF                        = 0
+  res_blank@trXMaxF                        = nx_group
+  res_blank@trYMinF                        = 0
+  res_blank@trYMaxF                        = ny_group
+  res_blank@vpWidthF                       = 0.6           ; this is default
+  res_blank@vpHeightF                      = 0.6*ny_group / nx_group  ; set height so each node is square
+  res_blank@tiMainFontHeightF              = 0.0125
+  res_blank@tiMainPosition                 = "Left"
+  res_blank@tiMainJust                     = "centerleft"
+  res_blank@tmEqualizeXYSizes              = True    ; Equal sizes for tick labels
+  res_blank@tmXBMajorLengthF               = 0.0      ; effectively turn off tick marks
+  res_blank@tmYLMajorLengthF               = 0.0      ; effectively turn off tick marks
+  res_blank@tmXBMode                       = "Explicit"
+  ;res_blank@tmXBLabels                     = ispan(0,nx_group-1,1)+""            ; tick marks
+  res_blank@tmXBValues                     = fspan(0, nx_group-1, nx_group) + 0.5 ; position for tick labels
+  res_blank@tmYLMode                       = "Explicit"
+  ;res_blank@tmYLLabels                     = ispan(ny_group-1,0,1)+""            ; backwards tick marks
+  res_blank@tmYLValues                     = fspan(0, ny_group-1, ny_group) + 0.5 ; position for tick labels
+  res_blank@tmXBLabelFontHeightF           = res_blank@tiMainFontHeightF
+  ;res_blank@tiXAxisString                  = "SOM Pattern"
+  ;res_blank@tiYAxisString                  = "SOM Pattern"
+  res_blank@tiXAxisFontHeightF             = 0.01
+  res_blank@tiYAxisFontHeightF             = 0.01
+
+; Add in squares:
+  xx = (/0., 0., 1., 1., 0./)
+  yy = (/0., 1., 1., 0., 0./)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;  
+; Figure 6a
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+print("Figure 6a")
+  fout1   = "figure_6a"
+  wks1 = gsn_open_wks("ps",fout1)
+  gsn_define_colormap(wks1, "BlueRed")
+
+  title = "a. Group percent contribution to mean difference: 2005-2007 WRF50 and ERA-I"
+  res_blank@tiMainString                   = title
+
+; Begin plotting:    
+  plot = new(1, graphic)
+  dum1 = new((/nnode/),graphic)
+  dum2 = new((/nnode/),graphic)
+  dum3 = new((/nnode/),graphic)
+  plot = gsn_blank_plot(wks1,res_blank)
+
+; Polygon resources for color shading:
+  res_poly = True
+; Text resources for count and freq:
+  res_txt = True
+  res_txt@txFontHeightF = 0.035
+  res_txt@txFont = 22
+  res_txt@txFontColor = "black"
+
+; Reverse rows for plotting
+  groups_all = groups_all(:,::-1)
+
+; get color scales for + and - contribution
+  slope = 4./(max(abs(groups_all))-0.0)
+  color_indices = slope*groups_all
+
+; loop through each node to plot
+n = 0
+do y = 0, ny_group - 1
+  do x = 0, nx_group - 1 
+    xp = xx + x
+    yp = yy + y 
+
+    ; color ALL squares by influence
+    color_index = color_indices(x,y)
+    if(color_index .ge. 3.0)
+      res_poly@gsFillColor = 9
+      ;res_txt@txBackgroundFillColor = 9
+    end if
+    if(color_index .ge. 2.0 .and. color_index .lt. 3.0)
+      res_poly@gsFillColor = 8
+      ;res_txt@txBackgroundFillColor = 8
+    end if
+    if(color_index .ge. 1.0 .and. color_index .lt. 2.0)
+      res_poly@gsFillColor = 7
+      ;res_txt@txBackgroundFillColor = 7
+    end if
+    if(color_index .gt. 0.0 .and. color_index .lt. 1.0)
+      res_poly@gsFillColor = 6
+      ;res_txt@txBackgroundFillColor = 6
+    end if
+    if(color_index .eq. 0.0)
+      res_poly@gsFillColor = "white"
+      ;res_txt@txBackgroundFillColor = "white"
+    end if
+    if(color_index .lt. 0.0 .and. color_index .gt. -1.0)
+      res_poly@gsFillColor = 5
+      ;res_txt@txBackgroundFillColor = 5
+    end if
+    if(color_index .lt. -1.0 .and. color_index .gt. -2.0)
+      res_poly@gsFillColor = 4
+      ;res_txt@txBackgroundFillColor = 4
+    end if
+    if(color_index .lt. -2.0 .and. color_index .gt. -3.0)
+      res_poly@gsFillColor = 3
+      ;res_txt@txBackgroundFillColor = 3
+    end if
+    if(color_index .lt. -3.0)
+      res_poly@gsFillColor = 2
+      ;res_txt@txBackgroundFillColor = 2
+    end if
+
+    ; Draw boxes
+    dum1(n) = gsn_add_polygon(wks1, plot, xp, yp, res_poly)
+    dum2(n) = gsn_add_polyline(wks1, plot, xp, yp, res_poly)
+    ; Add text
+    text = sprintf("%5.2f",groups_all(x,y))+"%"
+    dum3(n) = gsn_add_text(wks1, plot, text, xp(0)+.5, yp(0)+.5, res_txt)
+    delete(text)
+    delete(res_poly@gsFillColor)
+    n = n+1
+  end do 
+end do
+  
+; Finally - make plot
+  draw(plot)
+  frame(wks1)
+  convert_cmd = "convert -density 300 "+fout1+".ps -rotate -90 -trim -bordercolor white -border 10 -colors 256 -depth 8 "+fout1+".png"
+  system(convert_cmd)
+
+delete(title)
+delete(plot)
+delete(res_blank@tiMainString)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;  
+; Figure 6b
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+print("Figure 6b")
+  fout2   = "figure_6b"
+  wks2 = gsn_open_wks("ps",fout2)
+  gsn_define_colormap(wks2, "BlueRed")
+
+  title = "b. Group percent contribution to total frequency term"
+  res_blank@tiMainString                   = title
+
+; Begin plotting:    
+  plot = new(1, graphic)
+  dum1 = new((/nnode/),graphic)
+  dum2 = new((/nnode/),graphic)
+  dum3 = new((/nnode/),graphic)
+  plot = gsn_blank_plot(wks2,res_blank)
+
+; Polygon resources for color shading:
+  res_poly = True
+; Text resources for count and freq:
+  res_txt = True
+  res_txt@txFontHeightF = 0.035
+  res_txt@txFont = 22
+  res_txt@txFontColor = "black"
+
+; Reverse rows for plotting
+  groups_term1 = groups_term1(:,::-1)
+
+; get color scales for + and - contribution
+  delete(slope)
+  delete(color_indices)
+  slope = 4./(max(abs(groups_term1))-0.0)
+  color_indices = slope*groups_term1
+
+; loop through each node to plot
+n = 0
+do y = 0, ny_group - 1
+  do x = 0, nx_group - 1 
+    xp = xx + x
+    yp = yy + y 
+ 
+    ; color ALL squares by influence
+    color_index = color_indices(x,y)
+    if(color_index .ge. 3.0)
+      res_poly@gsFillColor = 9
+      ;res_txt@txBackgroundFillColor = 9
+    end if
+    if(color_index .ge. 2.0 .and. color_index .lt. 3.0)
+      res_poly@gsFillColor = 8
+      ;res_txt@txBackgroundFillColor = 8
+    end if
+    if(color_index .ge. 1.0 .and. color_index .lt. 2.0)
+      res_poly@gsFillColor = 7
+      ;res_txt@txBackgroundFillColor = 7
+    end if
+    if(color_index .gt. 0.0 .and. color_index .lt. 1.0)
+      res_poly@gsFillColor = 6
+      ;res_txt@txBackgroundFillColor = 6
+    end if
+    if(color_index .eq. 0.0)
+      res_poly@gsFillColor = "white"
+      ;res_txt@txBackgroundFillColor = "white"
+    end if
+    if(color_index .lt. 0.0 .and. color_index .gt. -1.0)
+      res_poly@gsFillColor = 5
+      ;res_txt@txBackgroundFillColor = 5
+    end if
+    if(color_index .lt. -1.0 .and. color_index .gt. -2.0)
+      res_poly@gsFillColor = 4
+      ;res_txt@txBackgroundFillColor = 4
+    end if
+    if(color_index .lt. -2.0 .and. color_index .gt. -3.0)
+      res_poly@gsFillColor = 3
+      ;res_txt@txBackgroundFillColor = 3
+    end if
+    if(color_index .lt. -3.0)
+      res_poly@gsFillColor = 2
+      ;res_txt@txBackgroundFillColor = 2
+    end if
+
+    ; Draw boxes
+    dum1(n) = gsn_add_polygon(wks1, plot, xp, yp, res_poly)
+    dum2(n) = gsn_add_polyline(wks1, plot, xp, yp, res_poly)
+    ; Add text
+    text = sprintf("%5.2f",groups_term1(x,y))+"%"
+    dum3(n) = gsn_add_text(wks2, plot, text, xp(0)+.5, yp(0)+.5, res_txt) 
+    delete(text)
+    delete(res_poly@gsFillColor)
+    n = n+1
+  end do 
+end do
+  
+; Finally - make plot
+  draw(plot)
+  frame(wks2)
+  convert_cmd = "convert -density 300 "+fout2+".ps -rotate -90 -trim -bordercolor white -border 10 -colors 256 -depth 8 "+fout2+".png"
+  system(convert_cmd)
+
+delete(title)
+delete(plot)
+delete(res_blank@tiMainString)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;  
+; Figure 6c
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+print("Figure 6c")
+  fout3   = "figure_6c"
+  wks3 = gsn_open_wks("ps",fout3)
+  gsn_define_colormap(wks3, "BlueRed")
+
+  title = "c. Group percent contribution to total intrapattern term"
+  res_blank@tiMainString                   = title
+
+; Begin plotting:    
+  plot = new(1, graphic)
+  dum1 = new((/nnode/),graphic)
+  dum2 = new((/nnode/),graphic)
+  dum3 = new((/nnode/),graphic)
+  plot = gsn_blank_plot(wks3,res_blank)
+
+; Polygon resources for color shading:
+  res_poly = True
+; Text resources for count and freq:
+  res_txt = True
+  res_txt@txFontHeightF = 0.035
+  res_txt@txFont = 22
+  res_txt@txFontColor = "black"
+
+; Reverse rows for plotting
+  groups_term2 = groups_term2(:,::-1)
+
+; get color scales for + and - contribution
+  delete(slope)
+  delete(color_indices)
+  slope = 4./(max(abs(groups_term2))-0.0)
+  color_indices = slope*groups_term2
+
+; loop through each node to plot
+n = 0
+do y = 0, ny_group - 1
+  do x = 0, nx_group - 1 
+    xp = xx + x
+    yp = yy + y 
+ 
+    ; color ALL squares by influence
+    color_index = color_indices(x,y)
+    if(color_index .ge. 3.0)
+      res_poly@gsFillColor = 9
+      ;res_txt@txBackgroundFillColor = 9
+    end if
+    if(color_index .ge. 2.0 .and. color_index .lt. 3.0)
+      res_poly@gsFillColor = 8
+      ;res_txt@txBackgroundFillColor = 8
+    end if
+    if(color_index .ge. 1.0 .and. color_index .lt. 2.0)
+      res_poly@gsFillColor = 7
+      ;res_txt@txBackgroundFillColor = 7
+    end if
+    if(color_index .gt. 0.0 .and. color_index .lt. 1.0)
+      res_poly@gsFillColor = 6
+      ;res_txt@txBackgroundFillColor = 6
+    end if
+    if(color_index .eq. 0.0)
+      res_poly@gsFillColor = "white"
+      ;res_txt@txBackgroundFillColor = "white"
+    end if
+    if(color_index .lt. 0.0 .and. color_index .gt. -1.0)
+      res_poly@gsFillColor = 5
+      ;res_txt@txBackgroundFillColor = 5
+    end if
+    if(color_index .lt. -1.0 .and. color_index .gt. -2.0)
+      res_poly@gsFillColor = 4
+      ;res_txt@txBackgroundFillColor = 4
+    end if
+    if(color_index .lt. -2.0 .and. color_index .gt. -3.0)
+      res_poly@gsFillColor = 3
+      ;res_txt@txBackgroundFillColor = 3
+    end if
+    if(color_index .lt. -3.0)
+      res_poly@gsFillColor = 2
+      ;res_txt@txBackgroundFillColor = 2
+    end if
+
+    ; Draw boxes
+    dum1(n) = gsn_add_polygon(wks1, plot, xp, yp, res_poly)
+    dum2(n) = gsn_add_polyline(wks1, plot, xp, yp, res_poly)
+    ; Add text
+    text = sprintf("%5.2f",groups_term2(x,y))+"%"
+    dum3(n) = gsn_add_text(wks3, plot, text, xp(0)+.5, yp(0)+.5, res_txt)
+    delete(text)
+    delete(res_poly@gsFillColor)
+    n = n+1
+  end do 
+end do
+  
+; Finally - make plot
+  draw(plot)
+  frame(wks3)
+  convert_cmd = "convert -density 300 "+fout3+".ps -rotate -90 -trim -bordercolor white -border 10 -colors 256 -depth 8 "+fout3+".png"
+  system(convert_cmd)
+
+delete(title)
+delete(plot)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;  
+; Figure 6d
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+print("Figure 6d")
+  fout4   = "figure_6d"
+  wks4 = gsn_open_wks("ps",fout4)
+  gsn_define_colormap(wks4, "BlueRed")
+
+  title = "d. Group percent contribution to total combined term"
+  res_blank@tiMainString                   = title
+
+; Begin plotting:    
+  plot = new(1, graphic)
+  dum1 = new((/nnode/),graphic)
+  dum2 = new((/nnode/),graphic)
+  dum3 = new((/nnode/),graphic)
+  plot = gsn_blank_plot(wks4,res_blank)
+
+; Polygon resources for color shading:
+  res_poly = True
+; Text resources for count and freq:
+  res_txt = True
+  res_txt@txFontHeightF = 0.035
+  res_txt@txFont = 22
+  res_txt@txFontColor = "black"
+
+; Reverse rows for plotting
+  groups_term3 = groups_term3(:,::-1)
+
+; get color scales for + and - contribution
+  delete(slope)
+  delete(color_indices)
+  slope = 4./(max(abs(groups_term3))-0.0)
+  color_indices = slope*groups_term3
+
+; loop through each node to plot
+n = 0
+do y = 0, ny_group - 1
+  do x = 0, nx_group - 1 
+    xp = xx + x
+    yp = yy + y 
+ 
+    ; color ALL squares by influence
+    color_index = color_indices(x,y)
+    if(color_index .ge. 3.0)
+      res_poly@gsFillColor = 9
+      ;res_txt@txBackgroundFillColor = 9
+    end if
+    if(color_index .ge. 2.0 .and. color_index .lt. 3.0)
+      res_poly@gsFillColor = 8
+      ;res_txt@txBackgroundFillColor = 8
+    end if
+    if(color_index .ge. 1.0 .and. color_index .lt. 2.0)
+      res_poly@gsFillColor = 7
+      ;res_txt@txBackgroundFillColor = 7
+    end if
+    if(color_index .gt. 0.0 .and. color_index .lt. 1.0)
+      res_poly@gsFillColor = 6
+      ;res_txt@txBackgroundFillColor = 6
+    end if
+    if(color_index .eq. 0.0)
+      res_poly@gsFillColor = "white"
+      ;res_txt@txBackgroundFillColor = "white"
+    end if
+    if(color_index .lt. 0.0 .and. color_index .gt. -1.0)
+      res_poly@gsFillColor = 5
+      ;res_txt@txBackgroundFillColor = 5
+    end if
+    if(color_index .lt. -1.0 .and. color_index .gt. -2.0)
+      res_poly@gsFillColor = 4
+      ;res_txt@txBackgroundFillColor = 4
+    end if
+    if(color_index .lt. -2.0 .and. color_index .gt. -3.0)
+      res_poly@gsFillColor = 3
+      ;res_txt@txBackgroundFillColor = 3
+    end if
+    if(color_index .lt. -3.0)
+      res_poly@gsFillColor = 2
+      ;res_txt@txBackgroundFillColor = 2
+    end if
+
+    ; Draw boxes
+    dum1(n) = gsn_add_polygon(wks1, plot, xp, yp, res_poly)
+    dum2(n) = gsn_add_polyline(wks1, plot, xp, yp, res_poly)
+    ; Add text
+    text = sprintf("%5.2f",groups_term3(x,y))+"%"
+    dum3(n) = gsn_add_text(wks4, plot, text, xp(0)+.5, yp(0)+.5, res_txt)
+    delete(text)
+    delete(res_poly@gsFillColor)
+    n = n+1
+  end do 
+end do
+  
+; Finally - make plot
+  draw(plot)
+  frame(wks4)
+  convert_cmd = "convert -density 300 "+fout4+".ps -rotate -90 -trim -bordercolor white -border 10 -colors 256 -depth 8 "+fout4+".png"
+  system(convert_cmd)
+
+delete(title)
+delete(plot)
+
+print("Completed all plots for "+varcode)
+print("Good job!")
+;;;;;;;;;;;;;;;;;;;;;; END script
+end

@@ -1,0 +1,374 @@
+;***************************************
+; PROGRAM DESCRIPTION: Calculate cross node correlations
+; INPUT DATA: Master som data
+; OUTPUT DATA: Plot of correlation of each node with other nodes
+; CREATOR: Alice DuVivier - October 2013
+;***************************************
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/shea_util.ncl"
+;***************************************
+begin
+; MANUAL INPUTS - for testing purposes
+; ******************************************************
+  nx_input = "7"
+  ny_input = "5"
+  infile   = "winds0.01_rlen2500000_r4.cod"
+; ******************************************************
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;  
+; Load data
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;
+; Preliminary domain information
+;;;;;;;;;;
+nx_node = stringtoint(nx_input)
+ny_node = stringtoint(ny_input)
+nnode = nx_node * ny_node
+indir = "/data3/duvivier/SOM/training/som_"+nx_node+ny_node+"/"+nx_node+"x_"+ny_node+"y/"
+
+print("Loading data...")
+f1 = addfile("/data3/duvivier/SOM/DATA/wrf10/200511/wrf-2005-11-01_00.green10.cf.nc","r")
+lat2d = f1->lat
+lon2d = f1->lon
+lat1D = ndtooned(lat2d)
+lon1D = ndtooned(lon2d)
+dims = dimsizes(lat2d)
+n_sn = dims(0)
+n_we = dims(1)
+n_tot = n_sn * n_we
+
+
+topo_2d = f1->Z_sfc
+topo_2d@_FillValue = -999.
+topo = ndtooned(topo_2d)
+topo@_FillValue = -999.
+
+; narrow down the values where I want winds 
+; whole domain
+ topo_1 = where(topo.lt.50 .and. lat1D.gt.56. .and. lat1D.lt.70. .and. lon1D.gt.-50. .and. lon1D.lt.-20., 1, 0)
+
+; remove box out to sea
+ topo_2 = where(topo.lt.50 .and. lat1D.gt.56. .and. lat1D.lt.64. .and. lon1D.gt.-25. .and. lon1D.lt.-20., 0, 1)
+
+; combine topo arrays
+ topo_fin = topo_1*topo_2
+ topo = where(topo_fin .gt.0, topo, topo@_FillValue)
+
+nsomcol = num(.not.ismissing(topo))
+topoind = ind(.not.ismissing(topo))
+
+;;;;;;;;;;
+; Load actual Master SOM data
+;;;;;;;;;;
+som_header = readAsciiHead(indir+infile,1)
+delim = " "
+nsomcol2 = stringtoint(str_get_field(som_header,1,delim))
+if (nsomcol.ne.nsomcol2/2) then
+  print("Columns in SOM file do not match valid values in topography file!")
+  exit
+end if
+
+som_nomissing = readAsciiTable(indir+infile, nsomcol2, "float", 1) ; 1 = skip header
+somdims = dimsizes(som_nomissing)
+if (nnode.ne.somdims(0)) then
+  print("Input .cod file has incorrect number of nodes!")
+  exit
+end if
+
+u_som_nomissing = som_nomissing(:,0:nsomcol2/2-1)
+v_som_nomissing = som_nomissing(:,nsomcol2/2:nsomcol2-1)
+
+; create array for entire domain, but only put data below 500 m into array
+u_som = new((/nnode, n_tot/), "float")
+v_som = new((/nnode, n_tot/), "float")
+uv_som = new((/nnode,n_tot*2/), "float")
+do n = 0, nnode - 1
+  u_som(n,topoind) = u_som_nomissing(n,:)
+  v_som(n,topoind) = v_som_nomissing(n,:)
+end do
+; calculate wind speed
+  ws_som = sqrt(u_som^2 + v_som^2)
+; combine u and v vectors into one array
+  uv_som(:,0:n_tot-1) = u_som
+  uv_som(:,n_tot:n_tot*2-1) = v_som
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;  
+; Do statistical analysis - loop through all nodes
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; preallocate arrays
+uv_som_corr  = new((/nnode,nnode/), "float")
+ws_som_corr = new((/nnode,nnode/), "float")
+uv_som_rmse  = new((/nnode,nnode/), "float")
+ws_som_rmse = new((/nnode,nnode/), "float")
+
+a = 0
+do a = 0, nnode - 1
+  ;;;;;;;;;;;;;
+  ; Correlate the node chosen with the other nodes
+  ;;;;;;;;;;;;;
+  print("Calculating correlation between node "+a+" and all other nodes")
+  do n = 0, nnode-1
+    uv_som_corr(a,n)  = escorc(uv_som(n,:),uv_som(a,:))
+    ws_som_corr(a,n) = escorc(ws_som(n,:),ws_som(a,:))
+  end do
+
+  ;;;;;;;;;;;;;
+  ; Calculate RMSE for the node chosen with the other nodes
+  ;;;;;;;;;;;;;
+  print("Calculating RMSE between node "+a+" and all other nodes")
+  npts = dimsizes(topoind)
+  do n = 0, nnode-1
+    ; uv vector
+    dum = sum((uv_som(n,:)-uv_som(a,:))^2) ; sum of bias squared     
+    uv_som_rmse(a,n)  = (sqrt(dum/npts))/2 ; divide by 2 because u/v vectors
+    delete(dum)
+    ; wind speed
+    dum = sum((ws_som(n,:)-ws_som(a,:))^2) ; sum of bias squared     
+    ws_som_rmse(a,n)  = sqrt(dum/npts)
+    delete(dum)
+  end do
+end do
+
+;;;;;;;;;;;;;
+; Make arrays the correct size for plotting
+;;;;;;;;;;;;;
+uv_rmse = new((/ny_node,nx_node,nnode/),"float")
+uv_corr = new((/ny_node,nx_node,nnode/),"float")
+ws_rmse = new((/ny_node,nx_node,nnode/),"float")
+ws_corr = new((/ny_node,nx_node,nnode/),"float")
+
+n = 0
+do y = 0, ny_node - 1
+  do x = 0, nx_node - 1 
+    uv_rmse(y,x,:) = uv_som_rmse(n,:)
+    uv_corr(y,x,:) = uv_som_corr(n,:)
+    ws_rmse(y,x,:) = ws_som_rmse(n,:)
+    ws_corr(y,x,:) = ws_som_corr(n,:)
+    n = n + 1
+  end do ; square for each node
+end do ; square for each node
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;  
+; Plot results
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+  outdir = "./"
+  xvals = ispan(0,nnode-1,1)
+  xlabels = ispan(0,nnode-1,1)
+
+; Resources for bar plot:
+  res_bar                                = True
+  res_bar@gsnMaximize                    = True
+  res_bar@gsnDraw                        = False
+  res_bar@gsnFrame                       = False
+  res_bar@gsnXYBarChart                  = True
+  res_bar@tmXTOn                         = False
+  res_bar@tmXBMode                       = "Explicit"
+  res_bar@tmXBLabels                     = xlabels
+  res_bar@tmXBValues                     = xvals
+  res_bar@tmXBLabelFontHeightF           = 0.01
+  res_bar@tiYAxisFontHeightF             = 0.025
+  res_bar@gsnXYBarChartBarWidth          = 0.4
+;  res_bar@gsnXYBarChartBarWidth          = 0.1
+  res_bar@tmXBOn                         = False
+  res_bar@trXMinF                        = -1
+  res_bar@trXMaxF                        = 35
+  
+  ; rmse resources
+  res_rmse                                = res_bar
+  ;res_rmse@tiYAxisString                  = "RMSE"
+  res_rmse@trYMinF                        = 0.0
+  res_rmse@trYMaxF                        = 10.0
+  res_rmse@gsnYRefLine                    = 0.0
+  res_rmse@gsnAboveYRefLineColor          = "black"
+  res_rmse@gsnBelowYRefLineColor          = "black"
+  res_rmse@xyLineColors                   = (/"black","black"/)
+
+  ; correlation resources
+  res_corr                                = res_bar
+  ;res_corr@tiYAxisString                  = "CORR"
+  res_corr@trYMinF                        = -1.0
+  res_corr@trYMaxF                        =  1.0
+  res_corr@gsnAboveYRefLineColor          = "blue"
+  res_corr@gsnBelowYRefLineColor          = "red"
+  res_corr@gsnYRefLine                    = 0.0
+  res_corr@xyLineColors                   = (/"blue","red"/)
+
+  ; resources for lines indicating the rows
+  resline                                 = True
+  resline@gsLineColor                     = "grey"
+  resline@gsLineThicknessF                = 0.5
+
+  ; needed for plotting squares
+  xx = (/0., 0., 1., 1., 0./)
+  yy = (/0., 1., 1., 0., 0./)
+
+print("Plotting intranode correlations and RMSE")
+;;;;;;;;;;;;;
+; UV RMSE plot
+;;;;;;;;;;;;;
+  fout = outdir+nx_input+"x_"+ny_input+"y_uv_rmse"
+  wks = gsn_open_wks("ps",fout)
+  plot  = new(nnode, graphic)
+  dum1 = new(nnode,graphic)
+  dum2 = new(nnode,graphic)
+  dum3 = new(nnode,graphic)
+  dum4 = new(nnode,graphic)
+  n = 0
+  do y = 0, ny_node - 1
+    do x = 0, nx_node - 1  
+      xp = xx + x
+      yp = yy + y
+      plot(n) = gsn_csm_xy(wks,xvals,uv_rmse(y,x,:),res_rmse)
+      dum1(n) = gsn_add_polyline(wks,plot(n),(/6.5,6.5/),(/0,10/),resline)
+      dum2(n) = gsn_add_polyline(wks,plot(n),(/13.5,13.5/),(/0,10/),resline)
+      dum3(n) = gsn_add_polyline(wks,plot(n),(/20.5,20.5/),(/0,10/),resline)
+      dum4(n) = gsn_add_polyline(wks,plot(n),(/27.5,27.5/),(/0,10/),resline)
+      n = n + 1
+    end do ; square for each node
+  end do ; square for each node
+
+  print("Creating panel plot: "+fout)
+  res_pan                       = True ; panel resources
+  res_pan@txString              = "UV vector RMSE"
+  res_pan@txFontHeightF         = 0.015 ; title font height
+  res_pan@gsnPaperOrientation   = "landscape" ; landscape mode
+  res_pan@gsnMaximize           = True ; make it big
+  ;res_pan@gsnYWhiteSpacePercent = 5.
+  ;res_pan@gsnXWhiteSpacePercent = 5.
+  gsn_panel(wks,plot,(/ny_node, nx_node/),res_pan)
+  print("converting "+fout+" to png")
+  delete(wks)
+  system("convert -trim -border 10 -bordercolor white -density 300 "+  \
+         "-rotate -90 -trim -border 10 "+fout+".ps "+fout+".png")
+  delete(plot)
+  delete(fout)
+  delete(res_pan)
+
+;;;;;;;;;;;;;
+; UV Corr plot
+;;;;;;;;;;;;;
+  fout = outdir+nx_input+"x_"+ny_input+"y_uv_corr"
+  wks = gsn_open_wks("ps",fout)
+  plot  = new(nnode, graphic)
+  dum1 = new(nnode,graphic)
+  dum2 = new(nnode,graphic)
+  dum3 = new(nnode,graphic)
+  dum4 = new(nnode,graphic)
+  n = 0
+  do y = 0, ny_node - 1
+    do x = 0, nx_node - 1  
+      xp = xx + x
+      yp = yy + y
+      plot(n) = gsn_csm_xy(wks,xvals,uv_corr(y,x,:),res_corr)
+      dum1(n) = gsn_add_polyline(wks,plot(n),(/6.5,6.5/),(/0,10/),resline)
+      dum2(n) = gsn_add_polyline(wks,plot(n),(/13.5,13.5/),(/0,10/),resline)
+      dum3(n) = gsn_add_polyline(wks,plot(n),(/20.5,20.5/),(/0,10/),resline)
+      dum4(n) = gsn_add_polyline(wks,plot(n),(/27.5,27.5/),(/0,10/),resline)
+      n = n + 1
+    end do ; square for each node
+  end do ; square for each node
+
+  print("Creating panel plot: "+fout)
+  res_pan                       = True ; panel resources
+  res_pan@txString              = "UV vector Correlation"
+  res_pan@txFontHeightF         = 0.015 ; title font height
+  res_pan@gsnPaperOrientation   = "landscape" ; landscape mode
+  res_pan@gsnMaximize           = True ; make it big
+  ;res_pan@gsnYWhiteSpacePercent = 5.
+  ;res_pan@gsnXWhiteSpacePercent = 5.
+  gsn_panel(wks,plot,(/ny_node, nx_node/),res_pan)
+  print("converting "+fout+" to png")
+  delete(wks)
+  system("convert -trim -border 10 -bordercolor white -density 300 "+  \
+         "-rotate -90 -trim -border 10 "+fout+".ps "+fout+".png")
+  delete(plot)
+  delete(fout)
+  delete(res_pan)
+
+;;;;;;;;;;;;;
+; WS RMSE plot
+;;;;;;;;;;;;;
+  fout = outdir+nx_input+"x_"+ny_input+"y_ws_rmse"
+  wks = gsn_open_wks("ps",fout)
+  plot  = new(nnode, graphic)
+  dum1 = new(nnode,graphic)
+  dum2 = new(nnode,graphic)
+  dum3 = new(nnode,graphic)
+  dum4 = new(nnode,graphic)
+  n = 0
+  do y = 0, ny_node - 1
+    do x = 0, nx_node - 1  
+      xp = xx + x
+      yp = yy + y
+      plot(n) = gsn_csm_xy(wks,xvals,ws_rmse(y,x,:),res_rmse)
+      dum1(n) = gsn_add_polyline(wks,plot(n),(/6.5,6.5/),(/0,10/),resline)
+      dum2(n) = gsn_add_polyline(wks,plot(n),(/13.5,13.5/),(/0,10/),resline)
+      dum3(n) = gsn_add_polyline(wks,plot(n),(/20.5,20.5/),(/0,10/),resline)
+      dum4(n) = gsn_add_polyline(wks,plot(n),(/27.5,27.5/),(/0,10/),resline)
+      n = n + 1
+    end do ; square for each node
+  end do ; square for each node
+
+  print("Creating panel plot: "+fout)
+  res_pan                       = True ; panel resources
+  res_pan@txString              = "WS vector RMSE"
+  res_pan@txFontHeightF         = 0.015 ; title font height
+  res_pan@gsnPaperOrientation   = "landscape" ; landscape mode
+  res_pan@gsnMaximize           = True ; make it big
+  ;res_pan@gsnYWhiteSpacePercent = 5.
+  ;res_pan@gsnXWhiteSpacePercent = 5.
+  gsn_panel(wks,plot,(/ny_node, nx_node/),res_pan)
+  print("converting "+fout+" to png")
+  delete(wks)
+  system("convert -trim -border 10 -bordercolor white -density 300 "+  \
+         "-rotate -90 -trim -border 10 "+fout+".ps "+fout+".png")
+  delete(plot)
+  delete(fout)
+  delete(res_pan)
+
+;;;;;;;;;;;;;
+; WS Corr plot
+;;;;;;;;;;;;;
+  fout = outdir+nx_input+"x_"+ny_input+"y_ws_corr"
+  wks = gsn_open_wks("ps",fout)
+  plot  = new(nnode, graphic)
+  dum1 = new(nnode,graphic)
+  dum2 = new(nnode,graphic)
+  dum3 = new(nnode,graphic)
+  dum4 = new(nnode,graphic)
+  n = 0
+  do y = 0, ny_node - 1
+    do x = 0, nx_node - 1  
+      xp = xx + x
+      yp = yy + y
+      plot(n) = gsn_csm_xy(wks,xvals,ws_corr(y,x,:),res_corr)
+      dum1(n) = gsn_add_polyline(wks,plot(n),(/6.5,6.5/),(/0,10/),resline)
+      dum2(n) = gsn_add_polyline(wks,plot(n),(/13.5,13.5/),(/0,10/),resline)
+      dum3(n) = gsn_add_polyline(wks,plot(n),(/20.5,20.5/),(/0,10/),resline)
+      dum4(n) = gsn_add_polyline(wks,plot(n),(/27.5,27.5/),(/0,10/),resline)
+      n = n + 1
+    end do ; square for each node
+  end do ; square for each node
+
+  print("Creating panel plot: "+fout)
+  res_pan                       = True ; panel resources
+  res_pan@txString              = "WS vector Correlation"
+  res_pan@txFontHeightF         = 0.015 ; title font height
+  res_pan@gsnPaperOrientation   = "landscape" ; landscape mode
+  res_pan@gsnMaximize           = True ; make it big
+  ;res_pan@gsnYWhiteSpacePercent = 5.
+  ;res_pan@gsnXWhiteSpacePercent = 5.
+  gsn_panel(wks,plot,(/ny_node, nx_node/),res_pan)
+  print("converting "+fout+" to png")
+  delete(wks)
+  system("convert -trim -border 10 -bordercolor white -density 300 "+  \
+         "-rotate -90 -trim -border 10 "+fout+".ps "+fout+".png")
+  delete(plot)
+  delete(fout)
+  delete(res_pan)
+
+print("Statistics completed. Good job! ")
+;;;;;;;;;;;;;;;;;;;;;; END script
+end
+

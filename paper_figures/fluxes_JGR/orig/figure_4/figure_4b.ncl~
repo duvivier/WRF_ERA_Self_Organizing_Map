@@ -1,0 +1,357 @@
+;***************************************
+; PROGRAM DESCRIPTION: This script plots single panel plots of 
+;                      diagnostic variables
+; INPUT DATA: WRF output or RACM-WRF output post processed with wrfout-to-cf.ncl
+;             and then made into yearly seasonal mean files
+; OUTPUT DATA: One Panel plot of specified variable
+; Note: This can be looped with 01_wrfsinglepanel_akd_seasonal.csh 
+;       to evaluate at multiple hours or variables
+; CREATOR: Modified by Alice DuVivier - August 2013
+;***************************************
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/shea_util.ncl"
+;***************************************
+begin
+; MANUAL INPUTS - for testing purposes
+; ******************************************************
+  nx_input = "7"
+  ny_input = "5"
+  varcode = "SH"
+  datatitle1  = "wrf50_200511_200703_6h"
+  datatitle1b = "era_i_200511_200703_6h"
+  ;; options: "era_i_200511_200703_6h"
+  ;; "wrf10_200511_200703_6h" "wrf50_200511_200703_6h"
+; ******************************************************
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+print("Processing all graphs for "+varcode)
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; BEGIN SCRIPT
+;;;;;;;;;;
+; Set information for variable
+;;;;;;;;;;
+; add each variable set in the c-shell 'varcode' and assign it a title and other necessary information
+if (varcode.eq."LH") then
+  vartitle1 = "Avg LH Flx at sfc"
+  invar1 = "lhflx_orig_1_avg"
+  invar2 = "lhflx_orig_2_avg"
+  invar3 = "lhflx_wind_recalc_avg"
+  invar4 = "lhflx_thermo_vars_recalc_avg"
+  vartype = "2d"
+  cmaptype = "lhflux"
+end if
+if (varcode.eq."SH") then
+  vartitle1 = "Avg SH Flx at sfc"
+  invar1 = "shflx_orig_1_avg"
+  invar2 = "shflx_orig_2_avg"
+  invar3 = "shflx_wind_recalc_avg"
+  invar4 = "shflx_thermo_vars_recalc_avg"
+  vartype = "2d"
+  cmaptype = "shflux"
+end if
+
+; Set the contour interval for each input variable   
+; set contour limits manually:
+if (cmaptype.eq."lhflux") then
+  cmin1               =  -150.
+  cmax1               =  150.
+  clev1               =  15.
+  stride1             = 2                 ; label stride
+  plotlines           = False              ; lines for reg plot
+  difflines           = False             ; lines for diff plot
+  cntype              = "AreaFill"      ; type of fill for contours 
+  spreadstart1        = 2                 ; start at color
+  spreadend1          = 250               ; end at color
+  colormap            = "BlueYellowRed_mod"
+end if
+if (cmaptype.eq."shflux") then
+  cmin1               =  -200.
+  cmax1               =  200.
+  clev1               =  20.
+  stride1             = 2                 ; label stride
+  plotlines           = False              ; lines for reg plot
+  difflines           = False             ; lines for diff plot
+  cntype              = "AreaFill"      ; type of fill for contours 
+  spreadstart1        = 2                 ; start at color
+  spreadend1          = 250               ; end at color
+  colormap            = "BlueYellowRed_mod"
+end if
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;  
+; Data Processing
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; set number of nodes to process
+nx_node = stringtoint(nx_input)
+ny_node = stringtoint(ny_input)
+nnode = nx_node*ny_node
+
+; get tag to let us know if it needs interpolation
+title1_ch  = stringtocharacter(datatitle1)
+title1_sub = title1_ch(0:4)
+tag_1 = chartostring(title1_sub)
+title1b_ch  = stringtocharacter(datatitle1b)
+title1b_sub = title1b_ch(0:4)
+tag_1b = chartostring(title1b_sub)
+
+; set input directory and file name strings
+dir1 = "/data3/duvivier/SOM/analysis/flux_compare/node_avgs/fluxes_recalc-sst/"
+inname = tag_1+"_"+tag_1b+"_200511_200703_6h-fluxes-recalc-sst"
+fname1 = "net_avg_"+inname
+f1 = addfile(dir1+fname1+".nc","r")
+;;;;;;;;;;
+; Load in actual data for analysis
+;;;;;;;;;;
+  var1_avg = f1->$invar1$
+  var2_avg = f1->$invar2$
+  var3_avg = f1->$invar3$
+  var4_avg = f1->$invar4$
+  seaice_1_avg  = f1->seaice_1_avg
+
+  dum = new((/1/),"float")
+  fill = dum@_FillValue
+  delete(dum)
+
+  ; load lat and lon for 50km file
+  lat2d = f1->lat
+  lon2d = f1->lon
+  z_sfc = f1->Z_sfc
+  if(tag_1 .eq. "wrf10")then
+    mask_50km = f1->mask_50km_terrain
+  end if
+
+  dims = dimsizes(z_sfc)
+  n_sn = dims(0)
+  n_we = dims(1)
+  n_tot = n_sn*n_we
+  delete(dims)
+  delete(f1)
+print("Loaded variables from both files")
+
+print("Masking terrain - net")
+; mask terrain and lat/lons - focus on ocean and  S. Greenland region 
+  ; mask terrain - focus on ocean
+  if (tag_1 .eq. "wrf10")then
+    var1_avg = where(mask_50km .eq. 1, var1_avg, var1_avg@_FillValue)
+    var2_avg = where(mask_50km .eq. 1, var2_avg, var2_avg@_FillValue)
+    var3_avg = where(mask_50km .eq. 1, var3_avg, var3_avg@_FillValue)
+    var4_avg = where(mask_50km .eq. 1, var4_avg, var4_avg@_FillValue)
+    seaice_1_avg = where(mask_50km .eq. 1, seaice_1_avg, seaice_1_avg@_FillValue)
+  else
+    var1_avg = where(z_sfc .lt. 10., var1_avg, var1_avg@_FillValue)
+    var2_avg = where(z_sfc .lt. 10., var2_avg, var2_avg@_FillValue)
+    var3_avg = where(z_sfc .lt. 10., var3_avg, var3_avg@_FillValue)
+    var4_avg = where(z_sfc .lt. 10., var4_avg, var4_avg@_FillValue)
+    seaice_1_avg = where(z_sfc .lt. 10., seaice_1_avg, seaice_1_avg@_FillValue)
+  end if
+
+  ; mask lat/lons - focus on S. Greenland region
+  var1_avg = where(lat2d .gt. 55. .and. lat2d .lt. 71. .and. lon2d .lt. -19. .and. lon2d .gt. -55., var1_avg, var1_avg@_FillValue)
+  var2_avg = where(lat2d .gt. 55. .and. lat2d .lt. 71. .and. lon2d .lt. -19. .and. lon2d .gt. -55., var2_avg, var2_avg@_FillValue)
+  var3_avg = where(lat2d .gt. 55. .and. lat2d .lt. 71. .and. lon2d .lt. -19. .and. lon2d .gt. -55., var3_avg, var3_avg@_FillValue)
+  var4_avg = where(lat2d .gt. 55. .and. lat2d .lt. 71. .and. lon2d .lt. -19. .and. lon2d .gt. -55., var4_avg, var4_avg@_FillValue)
+  seaice_1_avg = where(lat2d .gt. 55. .and. lat2d .lt. 71. .and. lon2d .lt. -19. .and. lon2d .gt. -55., seaice_1_avg, seaice_1_avg@_FillValue)
+
+;;;;;;;;;;
+;  calculate differences
+;;;;;;;;;;
+  net_diff_avg = var1_avg - var2_avg
+  wind_diff_avg = var1_avg - var3_avg   ; dataset1 fluxes calc'ed with dataset 2 winds - dataset1 fluxes
+  sfc_diff_avg  = var1_avg - var4_avg   ; dataset1 fluxes calc'ed with dataset 2 sfc vars - dataset1 fluxes
+
+  net_diff_avg@lat2d = lat2d
+  net_diff_avg@lon2d = lon2d
+  wind_diff_avg@lat2d = lat2d
+  wind_diff_avg@lon2d = lon2d
+  sfc_diff_avg@lat2d = lat2d
+  sfc_diff_avg@lon2d = lon2d
+  seaice_1_avg@lat2d = lat2d
+  seaice_1_avg@lon2d = lon2d
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;  
+; Plotting
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+print("Processing all graphs for "+varcode)
+outdir = "./"
+
+  ; Set resources for plot
+  res                             = True              ; plot mods desired
+  res@gsnRightString              = ""
+  res@gsnLeftString               = ""               ; Set this in loop
+  res@gsnFrame                    = False             ; Do not draw plot 
+  res@gsnDraw                     = False             ; Do not advance fr
+  res@gsnAddCyclic                = False             ; regional - not cyclic
+  res@gsnMaximize                 = True              ; Make it as big as possible
+  res@mpProjection                = "Stereographic"   ; map projection
+  res@mpCenterLonF                = -35. ;-30.             ; set the center lat/lon
+  res@mpCenterLatF                = 63.               
+  res@mpGridAndLimbOn             = False            ; Turn on lat/lon grid
+  res@mpGridLineDashPattern       = 2                ; Change dash pattern
+  res@mpFillOn                    = True             ; Enables map fill
+  res@mpGeophysicalLineColor      = "black"          ; Color of continents
+  res@mpGeophysicalLineThicknessF = 1.5              ; Make continents thinner
+ 
+  res@mpLimitMode                 = "LatLon"	     ; how to zoom in on map
+  res@mpMinLatF                   = 56.              ; set the minimum latitude 
+  res@mpMaxLatF                   = 70.              ; set the maximum latitude 
+  res@mpMinLonF                   = -54.0            ; set the minimum longitude 
+  res@mpMaxLonF                   = -20.0            ; set the maximum longitude 
+
+  ; contour resources for all plots
+  res@cnFillMode                  = cntype
+  res@cnFillOn                    = True              ; turn on filled contours
+  res@gsnSpreadColors             = True              ; use full colormap  
+  res@cnLevelSelectionMode        = "ManualLevels"    ; set manual contour
+  res@cnMissingValFillColor       = "gray85"          ; missing value color
+  res@cnMissingValFillPattern     = 0                 ; fill in
+  res@cnMissingValPerimOn         = True
+  res@cnMissingValPerimColor      = "black"
+  res@tiMainFontHeightF           = 0.02
+  res@lbLabelBarOn                = False
+  res@cnInfoLabelOn               = False
+;  res@lbLabelStride              = stride1
+;  res@pmLabelBarOrthogonalPosF   = -0.01             ; move label bar closer
+;  res@pmLabelBarHeightF          = 0.075             ; set height of labelbar
+
+;;;;;;;;;;;;;
+; Set resources for difference plots
+;;;;;;;;;;;;
+  opts                            = res               ; reset options
+  opts@gsnSpreadColorStart        = spreadstart1      ; start at color specified for each variable above
+  opts@gsnSpreadColorEnd          = spreadend1        ; end at color specified above
+  opts@cnMinLevelValF             = cmin1             ; set min contour level specified above
+  opts@cnMaxLevelValF             = cmax1             ; set max contour level specified above
+  opts@cnLevelSpacingF            = clev1             ; set contour spacing specified above
+  opts@cnLinesOn                  = plotlines         ; contour lines specified above
+  opts@cnLineLabelsOn             = plotlines         ; line labels on specified above
+
+;;;;;;;;;;;;;
+; Set resources for seaice overlay
+;;;;;;;;;;;;
+; set resources for sea ice overlay
+  res_ice                            = True               ; reset options
+  res_ice@gsnLeftString              = ""
+  res_ice@gsnRightString             = ""
+  res_ice@gsnFrame                   = False             ; Do not draw plot 
+  res_ice@gsnDraw                    = False             ; Do not advance fr
+  res_ice@cnInfoLabelOn              = False             ; Turn off info on contours at bottom
+  res_ice@cnFillOn                   = False             ; turn on filled contours
+  res_ice@cnLevelSelectionMode       = "ManualLevels"    ; set manual contour
+  res_ice@cnMinLevelValF             = 0.                ; set min contour level specified above
+  res_ice@cnMaxLevelValF             = 0.15              ; set max contour level specified above
+  res_ice@cnLevelSpacingF            = 0.15              ; set contour spacing specified above
+  res_ice@cnLinesOn                  = True              ; contour lines specified above
+  res_ice@cnLineLabelsOn             = True             ; line labels on specified above
+  res_ice@cnLineColor                = "black" ;"gray85"
+  res_ice@cnLineThicknessF           = 2.0
+  res_ice@tiXAxisOn                  = False
+  res_ice@tiYAxisOn                  = False
+
+; label lat/lon
+lat_ta = 69.75
+lon_ta = -39.0
+lat_tb = 68.75
+lon_tb = -40.0
+lat_tc = 67.75
+lon_tc = -40.0
+lat_td = 68.0
+lon_td = -60.0
+txres                             = True
+txres@txFontHeightF               = 0.035 ;0.06
+txres@txFontThicknessF            = 2.0
+txres2 = txres
+txres2@txFontHeightF              = 0.06
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;  
+; Plot 2 - Winter averages and difference
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+print("Plot 2 - winter averages and difference")
+fout2   = "figure_4a"
+
+  wks2 = gsn_open_wks("ps" ,fout2)
+  additional_colors = (/"gray85", "forestgreen", "yellow"/)
+  gsn_merge_colormaps(wks2,colormap,additional_colors)
+  plot = new(3, graphic)
+
+;;;;;;;;;;;;;
+; Make plot 0  - overall difference
+;;;;;;;;;;;;;
+  opts@tiMainString = "Representative Sensible Heat Flux~C~WRF50 - ERA-I"
+  cplot  = gsn_csm_contour_map(wks2,net_diff_avg,opts)
+  cplotb = gsn_csm_contour(wks2,seaice_1_avg,res_ice)
+  overlay(cplot,cplotb)
+;  dum0a = new(1,graphic)
+;  dum0a = gsn_add_text(wks2,cplot, "Sensible Heat Flux", lon_ta, lat_ta, txres)
+;  dum0b = new(1,graphic)
+;  dum0b = gsn_add_text(wks2,cplot, "WRF50 - ERA-I", lon_tb, lat_tb, txres)
+  dum0d = new(1,graphic)
+  dum0d = gsn_add_text(wks2,cplot, "a)", lon_td, lat_td, txres2)
+  plot(0) = cplot
+
+;;;;;;;;;;;;;
+; Make plot 1  - difference due to sfc vars
+;;;;;;;;;;;;;
+  opts@tiMainString = "Representative Sensible Heat Flux~C~WRF50 - WRF50 w/ ERA-I temp"
+  cplot  = gsn_csm_contour_map(wks2,sfc_diff_avg,opts)
+  cplotb = gsn_csm_contour(wks2,seaice_1_avg,res_ice)
+  overlay(cplot,cplotb)
+;  dum1 = new(1,graphic)
+;  dum1 = gsn_add_text(wks2,cplot, "Sensible Heat Flux", lon_ta, lat_ta, txres)
+;  dum1b = new(1,graphic)
+;  dum1b = gsn_add_text(wks2,cplot, "WRF50 - WRF50w/ERA-I temp", lon_tb, lat_tb, txres)
+  dum1d = new(1,graphic)
+  dum1d = gsn_add_text(wks2,cplot, "b)", lon_td, lat_td, txres2)
+  plot(1) = cplot
+
+;;;;;;;;;;;;;
+; Make plot 2  - difference due to wind
+;;;;;;;;;;;;;
+  opts@tiMainString = "Representative Sensible Heat Flux~C~WRF50 - WRF50 w/ ERA-I wind"
+  cplot  = gsn_csm_contour_map(wks2,wind_diff_avg,opts)
+  cplotb = gsn_csm_contour(wks2,seaice_1_avg,res_ice)
+  overlay(cplot,cplotb)
+;  dum2 = new(1,graphic)
+;  dum2 = gsn_add_text(wks2,cplot, "Sensible Heat Flux", lon_ta, lat_ta, txres)
+;  dum2b = new(1,graphic)
+;  dum2b = gsn_add_text(wks2,cplot, "WRF50 - WRF50w/ERA-I wind", lon_tb, lat_tb, txres)
+  dum2d = new(1,graphic)
+  dum2d = gsn_add_text(wks2,cplot, "c)", lon_td, lat_td, txres2)
+  plot(2) = cplot
+
+;;;;;;;;;;;;;
+; Plot final - panel plot set 
+;;;;;;;;;;;;; 
+
+  res_pan                            = True
+  res_pan@txFontHeightF              = 0.005 ;0.015
+  res_pan@gsnPaperOrientation        = "landscape"      ; landscape mode
+  res_pan@gsnPanelYWhiteSpacePercent = 2                ; Add white space b/w plots.
+  res_pan@gsnPanelXWhiteSpacePercent = 2                ; Add white space b/w plots.
+  res_pan@gsnPanelScalePlotIndex     = 1
+  res_pan@gsnMaximize                = True	       ; fill the page
+  res_pan@gsnPanelLabelBar           = True
+  res_pan@lbOrientation              = "Vertical"
+  res_pan@lbLabelStride              = stride1
+  res_pan@lbLabelFontHeightF         = 0.01
+  res_pan@pmLabelBarWidthF           = 0.05
+  res_pan@pmLabelBarHeightF          = 0.23
+;  res_pan@lbTitleString              = net_diff_avg@units
+;  res_pan@lbTitlePosition            = "Bottom"
+;  res_pan@lbTitleDirection           = "Across"
+;  res_pan@lbTitleJust                = "CenterLeft"
+;  res_pan@lbTitleFontHeightF         = 0.0005
+
+  gsn_panel(wks2,(/plot/),(/1,3/),res_pan)               ; create final panel plot
+
+
+; Finally - make plot
+print("converting plot 2 to png")
+convert_cmd = "convert -density 300 "+fout2+".ps -rotate -90 -trim -bordercolor white -border 10 -colors 256 -depth 8 "+fout2+".png"
+system(convert_cmd)
+
+print("Completed all plots for "+varcode)
+print("Good job!")
+;;;;;;;;;;;;;;;;;;;;;; END script
+end
