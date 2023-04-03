@@ -1,0 +1,1021 @@
+;***************************************
+; PROGRAM DESCRIPTION: This script plots single panel plots of 
+;                      diagnostic variables
+; INPUT DATA: WRF output or RACM-WRF output post processed with wrfout-to-cf.ncl
+;             and then made into yearly seasonal mean files
+; OUTPUT DATA: One Panel plot of specified variable
+; Note: This can be looped with 01_wrfsinglepanel_akd_seasonal.csh 
+;       to evaluate at multiple hours or variables
+; CREATOR: Matt Higgins
+;          Modified by Alice DuVivier - April 2012
+;***************************************
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_code.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/gsn_csm.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/contributed.ncl"
+load "$NCARG_ROOT/lib/ncarg/nclscripts/csm/shea_util.ncl"
+;***************************************
+begin
+; MANUAL INPUTS - for testing purposes
+; ******************************************************
+;  varcode = "U10_field_diff"
+;  datatitle1  = "wrf10_200511_200703_6h"
+;  datatitle1b = "era_i_200511_200703_6h"
+  ;; options: "era_i_200511_200703_6h"
+  ;; "wrf10_200511_200703_6h" "wrf50_200511_200703_6h"
+; ******************************************************
+
+; BEGIN SCRIPT
+print("Creating node average plot for: "+varcode)
+dir1 = "/data3/duvivier/SOM/training/averages/all/"
+
+; set outdir and fout names
+outdir = "./"
+fout   = varcode+"_"+datatitle1+"_"+datatitle1b+"_net_diff"
+
+; get tag to let us know if it needs interpolation
+title1_ch  = stringtocharacter(datatitle1)
+title1_sub = title1_ch(0:4)
+tag1 = chartostring(title1_sub)
+title1b_ch  = stringtocharacter(datatitle1b)
+title1b_sub = title1b_ch(0:4)
+tag1b = chartostring(title1b_sub)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;  
+; Set preferences for vartypes
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+; add each variable set in the c-shell 'varcode' and assign it a title and other necessary information
+; Which variables need to be loaded?
+if (varcode.eq."SLP_diff") then
+  vartitle1 = "Average Sea Level Pressure"
+  invar1 = "slp_avg"
+  invar_v = "slp_var"
+  vartype = "2d"
+  cmaptype = "pressure"
+  zoom = True
+end if
+if (varcode.eq."SLP_anom_diff") then
+  vartitle1 = "Average Sea Level Pressure Anomaly"
+  invar1 = "slp_anom_avg"
+  invar_v = "slp_anom_var"
+  vartype = "2d"
+  cmaptype = "press_anom"
+  zoom = True
+end if
+if (varcode.eq."T_sfc_diff") then
+  vartitle1 = "Average Surface Temperature"
+  invar1 = "T_sfc_avg"
+  invar_v = "T_sfc_var"
+  vartype = "2d"
+  cmaptype = "temperature"
+  zoom = True
+  convert_to_C = True
+end if
+if (varcode.eq."T_2m_diff") then
+  vartitle1 = "Average Temperature at 2m"
+  invar1 = "T_2m_avg"
+  invar_v = "T_2m_var"
+  vartype = "2d"
+  cmaptype = "temperature"
+  zoom = True
+  convert_to_C = True
+end if
+if (varcode.eq."Tgrad_2m_diff") then
+  vartitle1 = "Average Temperature gradient (sfc-2m)"
+  invar1 = "T_sfc_avg"
+  invar2 = "T_2m_avg"
+  vartype = "2d"
+  cmaptype = "temp_grad"
+  zoom2 = True
+  load2 = True
+  Tgrad = True
+end if
+if (varcode.eq."q_2m_diff") then
+  vartitle1 = "Average mixing ratio at 2m"
+  invar1 = "q_2m_avg"
+  invar_v = "q_2m_var"
+  vartype = "2d"
+  cmaptype = "mix_rad"
+  zoom = True
+  pcnt_diff = True
+end if
+if (varcode.eq."qgrad_2m_diff") then
+  vartitle1 = "Average Mixing Ratio gradient (sfc-2m)"
+  invar1 = "T_sfc_avg"
+  invar2 = "q_2m_avg"
+  vartype = "2d"
+  cmaptype = "mix_grad"
+  zoom2 = True
+  load2 = True
+  qgrad = True
+end if
+if (varcode.eq."precip_tot_diff") then
+  vartitle1 = "Average Total Precipitation"
+  invar1 = "precip_tot_avg"
+  invar_v = "precip_tot_var"
+  vartype = "2d"
+  cmaptype = "precip"
+  zoom2 = True
+  ;pcnt_diff = True
+  precip_convert = True
+end if
+if (varcode.eq."U10_field_diff") then
+  vartitle1 = "Average Wind Field at 10m"
+  invar1 = "u_10m_tr_avg"
+  invar2 = "v_10m_tr_avg"
+  invar_v = "u_10m_tr_var"
+  invar_v2 = "v_10m_tr_var"
+  vartype = "2d"
+  cmaptype = "wind"
+  find_field = True
+  zoom2 = True
+  load2 = True
+end if
+if (varcode.eq."U10_speed_diff") then
+  vartitle1 = "Average Wind Speed at 10m"
+  invar1 = "ws_10m_avg"
+  invar_v = "ws_10m_var"
+  vartype = "2d"
+  cmaptype = "wind"
+  zoom2 = True
+end if
+if (varcode.eq."SH_diff") then
+  vartitle1 = "Average Sensible Heat Flux at surface"
+  invar1 = "hfss_avg"
+  invar_v = "hfss_var"
+  vartype = "2d"
+  cmaptype = "shflux"
+  zoom2 = True
+end if
+if (varcode.eq."LH_diff") then
+  vartitle1 = "Average Latent Heat Flux at surface"
+  invar1 = "hfls_avg"
+  invar_v = "hfls_var"
+  vartype = "2d"
+  cmaptype = "lhflux"
+  zoom2 = True
+end if
+if (varcode.eq."SWUS_diff") then
+  vartitle1 = "Average Shortwave up at surface"
+  invar1 = "rsus_avg"
+  invar_v = "rsus_var"
+  vartype = "2d"
+  cmaptype = "radflux"
+  zoom2 = True
+end if
+if (varcode.eq."SWDS_diff") then
+  vartitle1 = "Average Shortwave down at surface"
+  invar1 =  "rsds_avg"
+  invar_v =  "rsds_var"
+  vartype = "2d"
+  cmaptype = "radflux"
+  zoom2 = True
+end if
+if (varcode.eq."SW_net_diff") then
+  vartitle1 = "Average Shortwave net at surface"
+  invar1 = "SW_deac_net_avg"
+  invar_v = "SW_deac_net_var"
+  vartype = "2d"
+  cmaptype = "radflux"
+  zoom2 = True
+end if
+if (varcode.eq."LWUS_diff") then
+  vartitle1 = "Average Longwave up at surface"
+  invar1 = "rlus_avg"
+  invar_v = "rlus_var"
+  vartype = "2d"
+  cmaptype = "radflux"
+  zoom2 = True
+end if
+if (varcode.eq."LWDS_diff") then
+  vartitle1 = "Average Longwave down at surface"
+  invar1 = "rlds_avg"
+  invar_v = "rlds_var"
+  vartype = "2d"
+  cmaptype = "radflux"
+  zoom2 = True
+end if
+if (varcode.eq."LW_net_diff") then
+  vartitle1 = "Average Longwave net at surface"
+  invar1 = "LW_deac_net_avg"
+  invar_v = "LW_deac_net_var"
+  vartype = "2d"
+  cmaptype = "radflux"
+  zoom2 = True
+end if
+if (varcode.eq."TurbFlx_diff") then
+  vartitle1 = "Average Net Turbulent Flux at surface"
+  invar1 = "Turb_deac_net_avg"
+  invar_v = "Turb_deac_net_var"
+  vartype = "2d"
+  cmaptype = "netflux"
+  zoom2 = True
+  netflx = True
+end if
+if (varcode.eq."RadFlx_diff") then
+  vartitle1 = "Average Net Radiative Flux at surface"
+  invar1 = "Rad_deac_net_avg"
+  invar_v = "Rad_deac_net_var"
+  vartype = "2d"
+  cmaptype = "radflux"
+  vartype = "2d"
+  zoom2 = True
+  netflx = True
+end if
+if (varcode.eq."NetFlx_diff") then
+  vartitle1 = "Average Net Flux at surface (Rad+Turb: + up)"
+  invar1 = "Flux_deac_net_avg"
+  invar_v = "Flux_deac_net_var"
+  vartype = "2d"
+  cmaptype = "netflux"
+  zoom2 = True
+  netflx = True
+end if
+
+; Set the contour interval for each input variable   
+; set contour limits manually:
+  if (cmaptype.eq."pressure") then
+    cmin1               = 980.
+    cmax1               = 1020.
+    clev1               = 2.
+    cmin2               = -5.
+    cmax2               = 5.
+    clev2               = 1.
+    stride1             = 4                 ; label stride
+    stride2             = 2                 ; label stride for diff plot
+    plotlines           = False              ; lines for reg plot
+    difflines           = False              ; lines for diff plot
+    cntype              = "AreaFill"
+    spreadstart1        = 2                 ; start at color
+    spreadend1          = 74                ; end at color
+    spreadstart2        = 2                ; start at color
+    spreadend2          = 102               ; end at color
+    colormap            = "BlWhRe"
+  end if
+  if (cmaptype.eq."press_anom") then
+    cmin1               = -10.
+    cmax1               = 10.
+    clev1               = 1.
+    cmin2               = -5.
+    cmax2               = 5.
+    clev2               = 1.
+    stride1             = 2                 ; label stride
+    stride2             = 1                 ; label stride for diff plot
+    plotlines           = False              ; lines for reg plot
+    difflines           = False              ; lines for diff plot
+    cntype              = "AreaFill"
+    spreadstart1        = 2                 ; start at color
+    spreadend1          = 102                ; end at color
+    spreadstart2        = 2                ; start at color
+    spreadend2          = 102               ; end at coprecip_tot_diff"lor
+    colormap            = "BlWhRe"
+  end if
+  if (cmaptype.eq."temperature") then
+    cmin1               = -30.
+    cmax1               = 20.
+    clev1               = 2.
+    cmin2               = -5.
+    cmax2               = 5.
+    clev2               = 0.5
+    stride1             = 4                 ; label stride
+    stride2             = 2                 ; label stride diff plot
+    plotlines           = False              ; lines for reg plot
+    difflines           = False              ; lines for diff plot
+    cntype              = "AreaFill"      ; type of contour fill
+    spreadstart1        = 2                 ; start at color
+    spreadend1          = 65                ; end at color
+    spreadstart2        = 67                ; start at color
+    spreadend2          = 107 
+    colormap            = "temp64_anoms.dave"
+  end if
+  if (cmaptype.eq."temp_grad") then
+    cmin1               = -5.
+    cmax1               = 5.
+    clev1               = 0.5
+    stride1             = 2                 ; label stride
+    plotlines           = False              ; lines for reg plot
+    cntype              = "AreaFill"         ; type of contour fill
+    spreadstart1        = 67                 ; start at color
+    spreadend1          = 107                ; end at color
+    colormap            = "temp64_anoms.dave"
+  end if
+  if (cmaptype.eq."mix_rad") then
+    cmin1               =  0.
+    cmax1               =  1.E-2
+    clev1               =  1.E-3
+    cmin2               =  -100.
+    cmax2               =  100.
+    clev2               =  10.
+    stride1             = 4                 ; label stride
+    stride2             = 2                 ; label stride diff plot
+    plotlines           = True              ; lines for reg plot
+    difflines           = False             ; lines for diff plot
+    cntype              = "AreaFill"        ; type of contour fill
+    spreadstart1        = 51                ; start at color
+    spreadend1          = 103               ; end at color
+    spreadstart2        = 2                 ; start at color
+    spreadend2          = 103               ; end at color
+    colormap            = "BrownBlue"
+  end if
+  if (cmaptype.eq."mix_grad") then
+    cmin1               = -2.5E-3
+    cmax1               = 2.5E-3
+    clev1               = 2.5E-4
+    stride1             = 2                 ; label stride
+    plotlines           = False              ; lines for reg plot
+    cntype              = "AreaFill"      ; type of contour fill
+    spreadstart1        = 2                 ; start at color
+    spreadend1          = 103                ; end at color
+    colormap            = "BrownBlue"
+  end if
+  if (cmaptype.eq."wind") then
+    cmin1               = 0.
+    cmax1               = 18.
+    clev1               = 1.
+    cmin2               = -10.
+    cmax2               = 10.
+    clev2               = 1.
+    stride1             = 2                 ; label stride
+    stride2             = 2                 ; label stride for diff plot
+    plotlines           = False              ; lines for reg plot
+    difflines           = False              ; lines for diff plot
+    cntype              = "AreaFill"
+    spreadstart1        = 2                 ; start at color
+    spreadend1          = 35                ; end at color
+    spreadstart2        = 37                ; start at color
+    spreadend2          = 142               ; end at color
+    colormap            = "SOM_wind_table"
+  end if
+  if (cmaptype.eq."precip") then
+    cmin1               =  0.
+    cmax1               =  1.
+    clev1               =  0.1
+    cmin2               = -1.
+    cmax2               =  1.
+    clev2               =  0.1
+    stride1             = 2                 ; label stride
+    stride2             = 2                 ; label stride diff plot 
+    plotlines           = False             ; lines for reg plot
+    difflines           = False             ; lines for diff plot
+    cntype              = "AreaFill"        ; type of contour fill
+    spreadstart1        = 51                ; start at color
+    spreadend1          = 103               ; end at color
+    spreadstart2        = 2                 ; start at color
+    spreadend2          = 103               ; end at color
+    colormap            = "BrownBlue"
+  end if
+  if (cmaptype.eq."ice") then
+    cmin1               =  0.
+    cmax1               =  0.15
+    clev1               =  0.15
+    stride1             = 1                 ; label stride
+    plotlines           = False             ; lines for reg plot
+    cntype              = "AreaFill"        ; type of contour fill
+    spreadstart1        = 51                ; start at color
+    spreadend1          = 103               ; end at color
+    colormap            = "BrownBlue"
+  end if
+  if (cmaptype.eq."lhflux") then
+    cmin1               =  -200.
+    cmax1               =  200.
+    clev1               =  20.
+    cmin2               = -100.
+    cmax2               =  100.
+    clev2               =  10.
+    stride1             = 2                 ; label stride
+    stride2             = 2                 ; label stride diff plot
+    plotlines           = False              ; lines for reg plot
+    difflines           = False             ; lines for diff plot
+    cntype              = "AreaFill"      ; type of fill for contours 
+    spreadstart1        = 2                 ; start at color
+    spreadend1          = 250               ; end at color
+    spreadstart2        = 2                 ; start at color
+    spreadend2          = 250               ; end at color
+    colormap            = "BlueYellowRed_mod"
+  end if
+  if (cmaptype.eq."shflux") then
+    cmin1               =  -200.
+    cmax1               =  200.
+    clev1               =  20.
+    cmin2               = -150.
+    cmax2               =  150.
+    clev2               =  10.
+    stride1             = 2                 ; label stride
+    stride2             = 2                 ; label stride diff plot
+    plotlines           = False              ; lines for reg plot
+    difflines           = False             ; lines for diff plot
+    cntype              = "AreaFill"      ; type of fill for contours 
+    spreadstart1        = 2                 ; start at color
+    spreadend1          = 250               ; end at color
+    spreadstart2        = 2                 ; start at color
+    spreadend2          = 250               ; end at color
+    colormap            = "BlueYellowRed_mod"
+  end if
+  if (cmaptype.eq."netflux") then
+    cmin1               =  -400.
+    cmax1               =  400.
+    clev1               =  40.
+    cmin2               = -200.
+    cmax2               =  200.
+    clev2               =  20.
+    stride1             = 2                 ; label stride
+    stride2             = 2                 ; label stride diff plot
+    plotlines           = False              ; lines for reg plot
+    difflines           = False             ; lines for diff plot
+    cntype              = "AreaFill"      ; type of fill for contours 
+    spreadstart1        = 2                 ; start at color
+    spreadend1          = 250               ; end at color
+    spreadstart2        = 2                 ; start at color
+    spreadend2          = 250               ; end at color
+    colormap            = "BlueYellowRed_mod"
+  end if
+  if (cmaptype.eq."radflux") then
+    cmin1               =  -75.
+    cmax1               =  75.
+    clev1               =  5.
+    cmin2               = -100.
+    cmax2               =  100.
+    clev2               =  10.
+    stride1             = 2                 ; label stride
+    stride2             = 2                 ; label stride diff plot
+    plotlines           = False              ; lines for reg plot
+    difflines           = False             ; lines for diff plot
+    cntype              = "AreaFill"      ; type of fill for contours 
+    spreadstart1        = 2                 ; start at color
+    spreadend1          = 250               ; end at color
+    spreadstart2        = 2                 ; start at color
+    spreadend2          = 250               ; end at color
+    colormap            = "BlueYellowRed_mod"
+  end if
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;  
+; Data Processing
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;
+; load in node averages
+;;;;;;;;;;
+; Load in lat/lon to get information for WRF10 domain
+  fname1 = "net_avg_"+datatitle1
+  f1 = addfile(dir1 + fname1 + ".nc","r")
+  lat2d_1 = f1->lat
+  lon2d_1 = f1->lon
+  z_sfc_1 = f1->Z_sfc
+  obs_1 = f1->number_dates
+
+  dims = dimsizes(lat2d_1)     ; get lat/lon dimensions
+  n_sn_1 = dims(0)              ; get south/north points
+  n_we_1 = dims(1)              ; get west/east points
+  n_tot_1 = n_sn_1*n_we_1              ; get total number of points in high res domain
+  delete(dims)
+
+; Load in lat/lon to get information for WRF10 domain
+  fname1b = "net_avg_"+datatitle1b
+  f1b = addfile(dir1 + fname1b + ".nc","r")
+  lat2d_1b = f1b->lat
+  lon2d_1b = f1b->lon
+  z_sfc_1b = f1b->Z_sfc
+  obs_1b = f1b->number_dates
+
+  dims = dimsizes(lat2d_1b)     ; get lat/lon dimensions
+  n_sn_1b = dims(0)              ; get south/north points
+  n_we_1b = dims(1)              ; get west/east points
+  n_tot_1b = n_sn_1b*n_we_1b              ; get total number of points in high res domain
+  delete(dims)
+
+  ; get weights and indicies for regridding (WRF50 and era weightings are identical)
+  weightin = addfile("/data3/duvivier/SOM/DATA/weightings_WRF50_to_WRF10.nc","r")
+  interp_ind = weightin->interp_ind
+  interp_wgt = weightin->interp_wgt
+
+  ; create all-node array for node average variable
+  if (invar1.eq."q_eta0_avg" .or. invar1.eq."T_eta0_avg") then
+    var1 = new((/n_sn_1,n_we_1/),"double")
+    var1b = new((/n_sn_1b,n_we_1b/),"double")
+    variance1 = new((/n_sn_1,n_we_1/),"double")
+    variance1b = new((/n_sn_1b,n_we_1b/),"double")
+  else ;(every other variable)
+    var1 = new((/n_sn_1,n_we_1/),"float")
+    var1b = new((/n_sn_1b,n_we_1b/),"float")
+    variance1 = new((/n_sn_1,n_we_1/),"float")
+    variance1b = new((/n_sn_1b,n_we_1b/),"float")
+  end if
+  fill = var1@_FillValue
+
+; create variables for other combinations
+  if (isvar("load2").and.(load2))
+    if (invar2.eq."q_eta0_avg" .or. invar2.eq."T_eta0_avg") then
+      var2 = new((/n_sn_1,n_we_1/),"double") 
+      var2b = new((/n_sn_1b,n_we_1b/),"double")
+    else   
+      var2 = new((/n_sn_1,n_we_1/),"float") 
+      var2b = new((/n_sn_1b,n_we_1b/),"float")
+      variance2 = new((/n_sn_1,n_we_1/),"float") 
+      variance2b = new((/n_sn_1b,n_we_1b/),"float")
+    end if
+  end if
+  if (isvar("qgrad").and.(qgrad))then
+    slp = new((/n_sn_1,n_we_1/),"float")
+    slpb = new((/n_sn_1b,n_we_1b/),"float")
+  end if
+  ; make sea ice var - overlay with everything
+  seaice = new((/n_sn_1,n_we_1/),"float")
+  seaiceb = new((/n_sn_1b,n_we_1b/),"float")
+
+;;;;;;;;;;
+; Load in actual data for analysis
+;;;;;;;;;;
+  var1(:,:) = f1->$invar1$(south_north|:,west_east|:)
+  var1b(:,:) = f1b->$invar1$(south_north|:,west_east|:)
+  variance1(:,:) = f1->$invar_v$(south_north|:,west_east|:)
+  variance1b(:,:) = f1b->$invar_v$(south_north|:,west_east|:)
+
+  if (isvar("load2").and.(load2)) then
+    var2(:,:)  = f1->$invar2$(south_north|:,west_east|:)
+    var2b(:,:) = f1b->$invar2$(south_north|:,west_east|:)
+    variance2(:,:) = f1->$invar_v2$(south_north|:,west_east|:)
+    variance2b(:,:) = f1b->$invar_v2$(south_north|:,west_east|:)
+
+    ; get total variance  (sum of two variances - assumes independence)
+    variance1 = variance1 + variance2
+    variance1b = variance1b + variance2b
+  end if
+  if (isvar("qgrad").and.(qgrad))then
+    slp(:,:) = f1->slp_avg(south_north|:,west_east|:)
+    slpb(:,:) = f1b->slp_avg(south_north|:,west_east|:)
+  end if
+  seaice(:,:) = f1->SeaIce_avg(south_north|:,west_east|:)
+  seaiceb(:,:) = f1b->SeaIce_avg(south_north|:,west_east|:)
+
+  ; mask terrain - focus on ocean
+  var1(:,:) = where(z_sfc_1 .lt. 500., var1(:,:), var1@_FillValue)
+  var1b(:,:) = where(z_sfc_1b .lt. 500., var1b(:,:), var1b@_FillValue)
+
+  ; delete vars to use in next loop
+  delete(fname1)
+  delete(f1)
+  delete(fname1b)
+  delete(f1b)
+
+print("Loaded variables from both files")
+
+;;;;;;;;;;
+; manipulate arrays as needed - post interpolation
+;;;;;;;;;;
+print("Manipulating vars as needed")
+if (isvar("convert_to_C").and.(convert_to_C)) then
+  if(varcode.eq."T_sfc_diff")then
+    var1 = var1 - 273.15
+    var1b = var1b - 273.15
+    var1@units = "C"
+  end if
+  if(varcode.eq."T_2m_diff".and. tag1b .eq. "era_i")then
+    var1 = var1 - 273.15
+    var1@units = "C"
+  end if 
+   if(varcode.eq."T_2m_diff".and. tag1b .ne. "era_i")then
+    var1 = var1 - 273.15
+    var1b = var1b - 273.15
+    var1@units = "C"
+  end if 
+end if
+if (isvar("precip_convert").and.(precip_convert)) then
+  var1 = var1*(60*60*3)
+  if (tag1b .eq. "era_i")then
+    var1b = var1b*(60*60*3)* (60*60*3)  ; I accidentally divided by the #seconds twice for era_i. fix it here.   
+  else
+    var1b = var1b*(60*60*3)
+  end if
+  var1@units = "mm"
+end if
+if (isvar("Tgrad").and.(Tgrad)) then
+  if (invar2.eq."T_eta0_avg") then ; WRF files need type conversion
+    tmp2 = doubletofloat(var2)
+    delete(var2)
+    var2 = tmp2
+    delete(tmp2)
+    tmp2b = doubletofloat(var2b)
+    delete(var2b)
+    var2b = tmp2b
+    delete(tmp2b)
+  end if
+  if (tag1b.eq."era_i") then ;ERA-I files have sfc temp in C
+    var1b = var1b-273.15 
+    var1b@units = "degC"
+  end if
+  var1 = var1 - var2
+  var1@units = "C"
+  delete(var2)
+  var1b = var1b-var2b
+  delete(var2b)
+end if
+if (isvar("qgrad").and.(qgrad)) then
+  if (invar2.eq."q_eta0_avg") then ; WRF files need type conversion
+    tmp2 = doubletofloat(var2)
+    delete(var2)
+    var2 = tmp2
+    delete(tmp2)
+    tmp2b = doubletofloat(var2b)
+    delete(var2b)
+    var2b = tmp2b
+    delete(tmp2b)
+  end if
+    ; calculate surface saturation mixing ratio
+  var1  = var1-273.15  ; convert sfc temp to Celsius (okay for both wrf and era)
+  satvp = 0.6112*exp((17.67*var1)/(243.5+var1))*10.0 ; Saturation vap. press in hPa    
+  satmr = 0.622*(satvp/(slp-satvp)) ; Saturation mixing ratio in kg/kg
+  delete(var1)
+  var1 = satmr
+  delete(satvp)
+  delete(satmr)
+  ; now calculate gradient  
+  var1 = var1 - var2
+  var1@units = "kg kg-1"
+  delete(var2)
+  ; calculate surface saturation mixing ratio
+  var1b  = var1b-273.15  ; convert sfc temp to Celsius
+  satvp = 0.6112*exp((17.67*var1b)/(243.5+var1b))*10.0 ; Saturation vap. press in hPa    
+  satmr = 0.622*(satvp/(slpb-satvp)) ; Saturation mixing ratio in kg/kg
+  delete(var1b)
+  var1b = satmr
+  delete(satvp)
+  delete(satmr)
+  ; now calculate gradient  
+  var1b = var1b - var2b
+  var1b@units = "kg kg-1"
+  delete(var2b)
+end if
+
+;;;;;;;;;;
+; Interpolate to WRF10 size (if needed)
+;;;;;;;;;;
+if (tag1 .eq. "wrf10" .and. tag1b .ne. "wrf10")then
+  print("Interpolating between resolutions")
+  ; Make arrays we'll need in interpolation
+  var1b_new = new((/n_sn_1,n_we_1/),"float") 
+  var1b_tmp_1d  = new((/n_tot_1/),"float")
+  variance1b_new = new((/n_sn_1,n_we_1/),"float") 
+  variance1b_tmp_1d  = new((/n_tot_1/),"float")
+  seaiceb_new = new((/n_sn_1,n_we_1/),"float") 
+  seaiceb_tmp_1d  = new((/n_tot_1/),"float")
+  if (isvar("find_field").and.(find_field))then
+    var2b_new = new((/n_sn_1,n_we_1/),"float") 
+    var2b_tmp_1d  = new((/n_tot_1/),"float")
+  end if
+
+    var1b_1d = ndtooned(var1b(:,:))
+    variance1b_1d = ndtooned(variance1b(:,:))
+    seaiceb_1d = ndtooned(seaiceb(:,:))
+    if (isvar("find_field").and.(find_field))then
+      var2b_1d = ndtooned(var2b(:,:))
+    end if
+    do i = 0, n_tot_1 - 1
+      indices_all = interp_ind(i,:)
+      n_indices = num(.not.ismissing(indices_all))
+      if (n_indices .ne. 0.0) then
+        indices = indices_all(0:n_indices-1)
+        weight_all = interp_wgt(i,:)
+        weight = weight_all(0:n_indices-1)
+        var1b_tmp_1d(i) = sum(var1b_1d(indices)*weight/sum(weight))
+        variance1b_tmp_1d(i) = sum(variance1b_1d(indices)*weight/sum(weight))
+        seaiceb_tmp_1d(i) = sum(seaiceb_1d(indices)*weight/sum(weight))
+        if (isvar("find_field").and.(find_field))then
+          var2b_tmp_1d(i) = sum(var2b_1d(indices)*weight/sum(weight))
+        end if
+        delete(indices)
+        delete(weight)
+      end if
+    end do
+    ; redimensionalize
+    var1b_new(:,:) = onedtond(var1b_tmp_1d,(/n_sn_1,n_we_1/))
+    variance1b_new(:,:) = onedtond(variance1b_tmp_1d,(/n_sn_1,n_we_1/))
+    seaiceb_new(:,:) = onedtond(seaiceb_tmp_1d,(/n_sn_1,n_we_1/))
+
+    if (isvar("find_field").and.(find_field))then
+      var2b_new(:,:) = onedtond(var2b_tmp_1d,(/n_sn_1,n_we_1/))
+      delete(var2b)
+      var2b = var2b_new
+      delete(var2b_new)
+      copy_VarMeta(var2,var2b)
+    end if
+
+  delete(var1b)
+  delete(variance1b)
+  delete(seaiceb)
+  var1b = var1b_new
+  variance1b = variance1b_new
+  seaiceb = seaiceb_new
+  delete(var1b_new)
+  delete(variance1b_new)
+  delete(seaiceb_new)
+  copy_VarMeta(var1, var1b)
+  copy_VarCoords(var1,var1b)
+  copy_VarMeta(variance1, variance1b)
+  copy_VarCoords(variance1,variance1b)
+  copy_VarMeta(seaice, seaiceb)
+  copy_VarCoords(seaice,seaiceb)
+  var1b@_FillValue = fill
+  variance1b@_FillValue = fill
+  seaiceb@_FillValue = fill
+end if
+
+;;;;;;;;;;
+; Find difference
+;;;;;;;;;;
+if (isvar("find_field").and.(find_field)) then
+  ; find wind field speed post interpolation
+  u1 = var1
+  v1 = var2
+  u1b = var1b
+  v1b = var2b
+  var1 = sqrt(var1^2+var2^2)
+  var1b = sqrt(var1b^2+var2b^2)
+  var1@long_name = "Net Wind Field"
+  var1@standard_name = "Wind Field"
+  delete(var2)
+  delete(var2b)
+end if
+
+; for precip and mixing ratio fields, make %diff field instead
+if (isvar("pcnt_diff").and.(pcnt_diff)) then
+  ; moisture variables - % diff
+  test = new((/1/),"float")
+  var1@_FillValue = test(0)
+  var1 = where(var1.eq.0.,var1@_FillValue,var1) ; deal with zero denom    
+  diff = ((var1 - var1b)/var1b)*100.
+  title_diff = "% Difference: ~C~("+datatitle1+" - "+datatitle1b+")~C~/"+datatitle1b
+else 
+  diff = var1 - var1b
+  title_diff = "Difference: ("+datatitle1+" - "+datatitle1b+")"
+end if
+
+; assign lat/lon info
+var1@lat2d = lat2d_1
+var1@lon2d = lon2d_1
+var1b@lat2d = lat2d_1
+var1b@lon2d = lon2d_1
+diff@lat2d = lat2d_1
+diff@lon2d = lon2d_1
+seaice@lat2d = lat2d_1
+seaice@lon2d = lon2d_1
+seaiceb@lat2d = lat2d_1
+seaiceb@lon2d = lon2d_1
+
+if (isvar("find_field").and.(find_field))then
+  u1@lat2d = lat2d_1
+  u1@lon2d = lon2d_1
+  copy_VarMeta(u1,v1)
+  copy_VarMeta(u1,u1b)
+  copy_VarMeta(u1,v1b)
+end if
+
+; prints together the variable title (set above for each type of data) with title1 (defined in cshell as the wrf or met info) and the max and min values
+  print(vartitle1+" min: "+min(diff)+"  max: "+max(diff)) 
+
+;;;;;;;;;;
+; Calculate statistical significance
+;;;;;;;;;;
+; Uses student's t-test. If the probability is less than 0.1 then we know at a 90% confidence level
+; that the two means are statistically significant.
+
+prob = 100.*(1. - ttest(var1,variance1,obs_1, var1b,variance1b,obs_1b, False, False))
+prob@lat2d = lat2d_1
+prob@lon2d = lon2d_1
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;  
+; Plotting
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+; create plots!
+print("Processing average graphs for "+varcode)
+
+  wks = gsn_open_wks("ps" ,fout)
+  additional_colors = (/"gray85", "forestgreen", "yellow"/)
+  gsn_merge_colormaps(wks,colormap,additional_colors)
+  plot = new(4, graphic)
+
+;;;;;;;;;;;;;
+; Set resources for variable plots
+;;;;;;;;;;;;
+
+  res                             = True              ; plot mods desired
+  res@gsnRightString              = ""
+  res@gsnLeftString               = ""               ; Set this in loop
+  res@gsnFrame                    = False             ; Do not draw plot 
+  res@gsnDraw                     = False             ; Do not advance fr
+  res@gsnAddCyclic                = False             ; regional - not cyclic
+  res@gsnMaximize                 = True              ; Make it as big as possible
+  res@mpProjection                = "Stereographic"   ; map projection
+  res@mpCenterLonF                = -30.             ; set the center lat/lon
+  res@mpCenterLatF                = 63.               
+  res@mpGridAndLimbOn             = True             ; Turn on lat/lon grid
+  res@mpGridLineDashPattern       = 2                ; Change dash pattern
+  res@mpFillOn                    = True             ; Enables map fill
+  res@mpGeophysicalLineColor      = "black"          ; Color of continents
+  res@mpGeophysicalLineThicknessF = 1.5              ; Make continents thinner
+ 
+  if (isvar("zoom").and.(zoom))then
+    res@mpLimitMode                 = "LatLon"	     ; how to zoom in on map
+    res@mpMinLatF                   = 56.              ; set the minimum latitude 
+    res@mpMaxLatF                   = 72.              ; set the maximum latitude 
+    res@mpMinLonF                   = -54.0            ; set the minimum longitude 
+    res@mpMaxLonF                   = -15.0            ; set the maximum longitude 
+  end if
+  if (isvar("zoom2").and.(zoom2))then
+    res@mpLimitMode                 = "LatLon"	     ; how to zoom in on map
+    res@mpMinLatF                   = 56.              ; set the minimum latitude 
+    res@mpMaxLatF                   = 70.              ; set the maximum latitude 
+    res@mpMinLonF                   = -54.0            ; set the minimum longitude 
+    res@mpMaxLonF                   = -20.0            ; set the maximum longitude 
+  end if
+
+  ; set contour information
+  res@cnFillMode                 = cntype
+  res@cnFillOn                   = True              ; turn on filled contours
+  res@gsnSpreadColors            = True              ; use full colormap
+  res@gsnSpreadColorStart        = spreadstart1      ; start at color specified for each variable above
+  res@gsnSpreadColorEnd          = spreadend1        ; end at color specified above
+  res@cnLevelSelectionMode       = "ManualLevels"    ; set manual contour
+  res@cnMinLevelValF             = cmin1             ; set min contour level specified above
+  res@cnMaxLevelValF             = cmax1             ; set max contour level specified above
+  res@cnLevelSpacingF            = clev1             ; set contour spacing specified above
+  res@cnLinesOn                  = plotlines         ; contour lines specified above
+  res@cnLineLabelsOn             = plotlines         ; line labels on specified above
+  res@cnMissingValFillColor      = "gray85"          ; missing value color
+  res@cnMissingValFillPattern    = 0                 ; fill in
+  res@cnMissingValPerimOn        = True
+  res@cnMissingValPerimColor     = "black"
+
+;;;;;;;;;;;;;
+; Set resources for overlay plots
+;;;;;;;;;;;;
+; set resources for sea ice overlay
+  res_ice                            = True               ; reset options
+  res_ice@gsnLeftString              = ""
+  res_ice@gsnRightString             = ""
+  res_ice@gsnFrame                   = False             ; Do not draw plot 
+  res_ice@gsnDraw                    = False             ; Do not advance fr
+  res_ice@cnInfoLabelOn              = False             ; Turn off info on contours at bottom
+
+;  res_ice@cnLevelSelectionMode       = "ExplicitLevels"
+;  res_ice@cnLevels                   = (/0., 0.15/)
+;  res_ice@cnFillOn                   = True
+;  res_ice@cnMonoFillPattern          = False
+;  res_ice@cnFillPatterns             = (/6, -1/) 
+;  res_ice@lbLabelBarOn               = False
+
+  res_ice@cnFillOn                   = False             ; turn on filled contours
+  res_ice@cnLevelSelectionMode       = "ManualLevels"    ; set manual contour
+  res_ice@cnMinLevelValF             = 0.                ; set min contour level specified above
+  res_ice@cnMaxLevelValF             = 0.15              ; set max contour level specified above
+  res_ice@cnLevelSpacingF            = 0.15              ; set contour spacing specified above
+  res_ice@cnLinesOn                  = True              ; contour lines specified above
+  res_ice@cnLineLabelsOn             = True             ; line labels on specified above
+  res_ice@cnLineColor                = "gray85"
+  res_ice@cnLineThicknessF           = 2.0
+
+  res_ice@tiXAxisOn                  = False
+  res_ice@tiYAxisOn                  = False
+
+; set resources for 95% statistical significance overlay
+  res_95                            = True               ; reset options
+  res_95@gsnLeftString              = ""
+  res_95@gsnRightString             = ""
+  res_95@gsnFrame                   = False             ; Do not draw plot 
+  res_95@gsnDraw                    = False             ; Do not advance fr
+  res_95@cnInfoLabelOn              = False             ; Turn off info on contours at bottom
+
+;  res_95@cnLevelSelectionMode       = "ExplicitLevels"
+;  res_95@cnLevels                   = (/0., 95./)
+;  res_95@cnFillOn                   = True
+;  res_95@cnMonoFillPattern          = False
+;  res_95@cnFillPatterns             = (/3, -1/) 
+;  res_95@lbLabelBarOn               = True
+
+  res_95@cnFillOn                   = True             ; turn on filled contours
+  res_95@cnMonoFillColor            = True
+  res_95@cnMonoFillPattern          = False
+  res_95@cnLevelSelectionMode       = "ManualLevels"    ; set manual contour
+  res_95@cnMinLevelValF             = 0.                ; set min contour level specified above
+  res_95@cnMaxLevelValF             = 95.              ; set max contour level specified above
+  res_95@cnLevelSpacingF            = 95.              ; set contour spacing specified above
+  res_95@cnFillPatterns             = (/-1,-1,17/)      ; hatch marks over areas where >99% sig. diff
+  ;res_95@cnLinesOn                  = True              ; contour lines specified above
+  ;res_95@cnLineLabelsOn             = True             ; line labels on specified above
+  ;res_95@cnLineColor                = "black"
+  ;res_95@cnLineThicknessF           = 2.0
+
+;  res_95@tiXAxisOn                  = False
+;  res_95@tiYAxisOn                  = False
+
+;;;;;;;;;;;;;
+; Make normal plots
+;;;;;;;;;;;;;
+  opts                            = res               ; reset options
+  opts@cnFillMode                 = cntype
+  opts@cnFillOn                   = True              ; turn on filled contours
+  opts@gsnSpreadColors            = True              ; use full colormap
+  opts@gsnSpreadColorStart        = spreadstart1      ; start at color specified for each variable above
+  opts@gsnSpreadColorEnd          = spreadend1        ; end at color specified above
+  opts@cnLevelSelectionMode       = "ManualLevels"    ; set manual contour
+  opts@cnMinLevelValF             = cmin1             ; set min contour level specified above
+  opts@cnMaxLevelValF             = cmax1             ; set max contour level specified above
+  opts@cnLevelSpacingF            = clev1             ; set contour spacing specified above
+  opts@cnLinesOn                  = plotlines         ; contour lines specified above
+  opts@cnLineLabelsOn             = plotlines         ; line labels on specified above
+  opts@cnMissingValFillColor      = "gray85"          ; missing value color
+  opts@cnMissingValFillPattern    = 0                 ; fill in
+  opts@tiMainFontHeightF          = 0.013
+  opts@lbLabelStride              = stride1
+  opts@pmLabelBarOrthogonalPosF   = -0.01             ; move label bar closer
+  opts@pmLabelBarHeightF          = 0.075             ; set height of labelbar
+
+  if (isvar("find_field").and.(find_field)) then
+    vcres                         = opts
+    vcres@vcGlyphStyle            = "LineArrow"
+    vcres@vcRefMagnitudeF         = 5.0      ; set vector reference magnitude
+    vcres@vcRefLengthF            = 0.02     ; length of vector (larger = longer)
+    if(tag1 .eq. "wrf10")then
+     vcres@vcMinDistanceF          = 0.1     ; vector spacing (smaller = more dense)
+    else
+      vcres@vcMinDistanceF          = 0.05     ; vector spacing (smaller = more dense)
+    end if
+    vcres@vcMonoLineArrowColor    = True
+    vcres@vcLineArrowColor        = "black"
+    vcres@vcRefAnnoOn             = False
+    vcres@gsnScalarContour        = True
+  end if
+
+  opts@tiMainString               = datatitle1            ; title string specified from cshell
+
+;  if (isvar("find_field").and.(find_field)) then
+;    cplot0  = gsn_csm_vector_scalar_map(wks,u1,v1,var1,vcres)
+;  else
+    cplot0  = gsn_csm_contour_map(wks,var1,opts)
+;  end if
+  cplot0b = gsn_csm_contour(wks,seaice,res_ice)
+  overlay(cplot0,cplot0b)
+  plot(0) = cplot0
+
+  opts@tiMainString               = datatitle1b            ; title string specified from cshell
+;  if (isvar("find_field").and.(find_field)) then
+;    cplot1  = gsn_csm_vector_scalar_map(wks,u1b,v1b,var1b,vcres)
+;  else
+    cplot1  = gsn_csm_contour_map(wks,var1b,opts)
+;  end if
+
+  cplot1b = gsn_csm_contour(wks,seaiceb,res_ice)
+  overlay(cplot1,cplot1b)
+  plot(1) = cplot1
+
+delete(opts)
+
+;;;;;;;;;;;;;
+; Make difference plot
+;;;;;;;;;;;;;
+  opts                            = res
+  opts@cnFillMode                 = cntype
+  opts@cnFillOn                   = True
+  opts@gsnSpreadColors            = True              ; use full colormap
+  opts@gsnSpreadColorStart        = spreadstart2      ; start at color specified above
+  opts@gsnSpreadColorEnd          = spreadend2        ; end at color specified above
+  opts@cnLevelSelectionMode       = "ManualLevels"    ; set manual contour
+  opts@cnMinLevelValF             = cmin2             ; set min contour level specified above
+  opts@cnMaxLevelValF             = cmax2             ; set max contour level specified above
+  opts@cnLevelSpacingF            = clev2             ; set contour spacing specified above
+  opts@cnLinesOn                  = difflines         ; contour lines specified above
+  opts@cnLineLabelsOn             = difflines
+  opts@cnMissingValFillColor      = "gray85"          ; missing value color
+  opts@cnMissingValFillPattern    = 0                 ; fill in
+  opts@tiMainFontHeightF          = 0.013
+  opts@lbLabelStride              = stride2
+  opts@pmLabelBarOrthogonalPosF   = -0.01             ; move label bar closer
+  opts@pmLabelBarHeightF          = 0.075
+
+  opts@tiMainString               = title_diff        ; set title for difference plot
+  cplot3  = gsn_csm_contour_map(wks,diff,opts)
+  cplot3b = gsn_csm_contour(wks,prob,res_95)          ; add 95% stat sig
+  overlay(cplot3,cplot3b)
+  plot(3) = cplot3
+
+
+;;;;;;;;;;;;;
+; Plot final - panel plot set 
+;;;;;;;;;;;;; 
+title_fin = vartitle1 + " ("+var1@units+")"
+
+  pnlres                            = True
+  pnlres@txString                   = title_fin        ; main title
+  pnlres@txFontHeightF              = 0.02
+  pnlres@gsnPaperOrientation        = "landscape"      ; landscape mode
+  pnlres@gsnPanelYWhiteSpacePercent = 3                ; Add white space b/w plots.
+  pnlres@gsnPanelXWhiteSpacePercent = 3                ; Add white space b/w plots.
+  pnlres@gsnPanelScalePlotIndex     = 1
+  pnlres@gsnMaximize                = True	       ; fill the page
+  gsn_panel(wks,(/plot/),(/2,2/),pnlres)               ; create final panel plot
+
+ print("converting to png")
+; convert to png 
+  convert_cmd = "convert -density 300 "+fout+".ps -rotate -90 -trim -bordercolor white -border 10 -colors 256 -depth 8 "+fout+".png"
+
+  system(convert_cmd)
+;;;;;;;;;;;;;;;;;;;;;; END script
+end
